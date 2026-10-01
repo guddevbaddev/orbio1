@@ -1,12 +1,12 @@
 import * as Art from "./art.js";
 import * as Orbio from "./orbio.js";
 
-const { T } = Art;
-const VIEW_W = 320, VIEW_H = 192;
-const MAP_W = 30, MAP_H = 20;
-const GROW_MS = 25_000;       // how long a crop takes to ripen (real time)
+const { T, C } = Art;
+const VIEW_W = 384, VIEW_H = 224;
+const MAP_W = 48, MAP_H = 30;
+const GROW_MS = 25_000;          // how long a crop takes to ripen (real time)
 const REAL_MS_PER_10MIN = 7_000; // in-game clock speed
-const SAVE_KEY = "orbio-valley-save-v1";
+const SAVE_KEY = "orbio-valley-save-v2";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -15,52 +15,122 @@ Art.useContext(ctx);
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const rand = (a, b) => a + Math.random() * (b - a);
 
-// ---------------------------------------------------------------- map
+// ================================================================ the map
 
-const tiles = Array.from({ length: MAP_H }, () => Array(MAP_W).fill("g"));
-const set = (x, y, v) => { if (x >= 0 && y >= 0 && x < MAP_W && y < MAP_H) tiles[y][x] = v; };
+// Ground: g grass, c cobble, d dirt, w water, b bridge, k dock, f waterfall, r cliff
+const ground = Array.from({ length: MAP_H }, () => Array(MAP_W).fill("g"));
+const owner = Array.from({ length: MAP_H }, () => Array(MAP_W).fill(null)); // entity occupying a tile
+const inMap = (x, y) => x >= 0 && y >= 0 && x < MAP_W && y < MAP_H;
+const setG = (x, y, v) => { if (inMap(x, y)) ground[y][x] = v; };
+const fillG = (x0, y0, x1, y1, v) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) setG(x, y, v); };
 
-for (let x = 0; x < MAP_W; x++) { set(x, 0, "t"); set(x, MAP_H - 1, "t"); }
-for (let y = 0; y < MAP_H; y++) { set(0, y, "t"); set(MAP_W - 1, y, "t"); }
-for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
-  if (((x - 22.5) / 5.5) ** 2 + ((y - 14.5) / 3.8) ** 2 < 1) set(x, y, "w");
+// lake + river + waterfall
+for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (((x - 38) / 9.5) ** 2 + ((y - 25.5) / 4.6) ** 2 < 1) setG(x, y, "w");
+fillG(30, 0, 31, 22, "w");
+fillG(30, 0, 31, 2, "f");
+fillG(28, 0, 29, 2, "r"); fillG(32, 0, 33, 2, "r");
+// roads and paths
+fillG(1, 8, 46, 8, "c");
+setG(30, 8, "b"); setG(31, 8, "b");
+fillG(33, 9, 46, 17, "c");      // town plaza
+fillG(7, 8, 7, 8, "c");
+fillG(4, 9, 4, 10, "d");        // to the barn
+fillG(17, 9, 17, 11, "d");      // to the field gate
+fillG(23, 9, 23, 23, "d");      // down to the lake
+fillG(24, 23, 29, 23, "d");
+setG(30, 23, "k"); setG(31, 23, "k"); setG(32, 23, "k");
+fillG(43, 9, 43, 9, "c");
+fillG(25, 15, 28, 15, "d");     // greenhouse door path
+fillG(9, 23, 22, 23, "d");      // orchard path
+
+const isWater = (x, y) => inMap(x, y) && (ground[y][x] === "w" || ground[y][x] === "f");
+const walkableGround = (x, y) => inMap(x, y) && !["w", "f", "r"].includes(ground[y][x]);
+
+// ---------------------------------------------------------------- entities
+
+const ents = [];
+function place(e) {
+  ents.push(e);
+  if (e.solid !== false) for (let y = e.ty; y < e.ty + (e.fh || 1); y++) for (let x = e.tx; x < e.tx + (e.fw || 1); x++) if (inMap(x, y)) owner[y][x] = e;
+  e.baseY = (e.ty + (e.fh || 1)) * T;
+  return e;
 }
-for (let x = 1; x <= 28; x++) set(x, 7, "p");
-set(4, 6, "p"); set(23, 6, "p"); set(24, 6, "p");
-for (let y = 8; y <= 14; y++) set(14, y, "p");
-set(15, 14, "p");
-set(16, 14, "d"); set(17, 14, "d");
-// the fenced field
-for (let x = 5; x <= 11; x++) { if (x !== 8) set(x, 9, "fh"); set(x, 14, "fh"); }
-for (let y = 10; y <= 13; y++) { set(5, y, "fv"); set(11, y, "fv"); }
-for (const [x, y] of [[2, 10], [3, 13], [2, 16], [7, 17], [12, 17], [26, 9], [28, 9], [9, 3], [18, 2], [15, 17], [19, 4]]) set(x, y, "t");
+// A sprite centred on its footprint and standing on its bottom edge.
+function spriteEnt(kind, tx, ty, fw, fh, w, h, sprite, extra = {}) {
+  const x = tx * T + (fw * T - w) / 2, y = (ty + fh) * T - h;
+  return place({ kind, tx, ty, fw, fh, x, y, w, h, draw: (t, lit) => ctx.drawImage(sprite(lit), x, y), ...extra });
+}
+const tree = (kind, tx, ty) => spriteEnt("tree", tx, ty, 1, 1, 32, 44, () => Art.treeSprite(kind));
+const bush = (kind, tx, ty) => spriteEnt("bush", tx, ty, 1, 1, 16, 16, () => Art.bushSprite(kind));
+const lamp = (tx, ty) => spriteEnt("lantern", tx, ty, 1, 1, 16, 32, (lit) => Art.lantern(lit), { lights: [[8, 6, 46]] });
 
-const PLOTS = [[6, 10], [8, 10], [10, 10], [6, 12], [8, 12], [10, 12]];
-const BUILDINGS = [
-  { kind: "house", x: 2, y: 2, w: 5, h: 4, sign: "HOME" },
-  { kind: "store", x: 21, y: 2, w: 6, h: 4, sign: "STORE" },
-];
-const PROPS = { mailbox: [7, 6], board: [16, 5] };
-const orbyNpc = { x: 19 * T, y: 9 * T };
+// buildings
+const B = {};
+B.house = spriteEnt("house", 4, 4, 7, 4, 112, 112, (lit) => Art.farmhouse(lit), {
+  lights: [[21, 75, 40], [91, 75, 40], [56, 92, 34], [31, 41, 26], [81, 41, 26]],
+  after: (e, t) => Art.smoke(e.x + 90, e.y + 2, t),
+});
+B.silo = spriteEnt("silo", 1, 6, 2, 2, 32, 88, () => Art.silo(), { lights: [[16, 48, 20]] });
+B.station = spriteEnt("station", 14, 6, 2, 2, 32, 48, null, {
+  draw: (t, lit) => { ctx.save(); ctx.translate(B.station.x, B.station.y); Art.station(t, lit); ctx.restore(); },
+  lights: [[16, 6, 40], [16, 30, 22]],
+});
+B.barn = spriteEnt("barn", 2, 11, 5, 4, 80, 96, (lit) => Art.barn(lit), { lights: [[40, 28, 26], [40, 80, 34]] });
+B.greenhouse = spriteEnt("greenhouse", 24, 11, 6, 4, 96, 88, (lit) => Art.greenhouse(lit), { lights: [[48, 60, 56]] });
+B.gazette = spriteEnt("gazette", 40, 4, 6, 4, 96, 104, (lit) => Art.gazette(lit), { lights: [[48, 18, 36], [19, 76, 30], [77, 76, 30], [48, 86, 30]] });
+B.fountain = spriteEnt("fountain", 38, 11, 3, 3, 48, 72, () => Art.fountain(), { after: (e, t) => Art.fountainWater(e.x, e.y, t), lights: [[24, 27, 24]] });
+const STALL_COLORS = [C.red, C.overall, C.roofGreen, C.orange];
+[[34, 11], [34, 15], [44, 12], [44, 15]].forEach(([x, y], i) => spriteEnt("stall", x, y, 2, 1, 32, 40, () => Art.stall(STALL_COLORS[i])));
+const mailbox = spriteEnt("mailbox", 11, 7, 1, 1, 16, 20, () => Art.mailbox(!Orbio.isSignedIn()));
+mailbox.draw = (t) => ctx.drawImage(Art.mailbox(!Orbio.isSignedIn()), mailbox.x, mailbox.y);
+spriteEnt("board", 17, 7, 1, 1, 16, 24, () => Art.board());
+for (const [x, y] of [[8, 10], [9, 10], [1, 9]]) spriteEnt("crate", x, y, 1, 1, 16, 16, () => Art.crate());
+for (const [x, y] of [[3, 7], [12, 7], [36, 7], [33, 17]]) spriteEnt("barrel", x, y, 1, 1, 16, 18, () => Art.barrel());
+for (const [x, y] of [[7, 15], [8, 15], [9, 13]]) spriteEnt("hay", x, y, 1, 1, 16, 14, () => Art.hay());
 
-const buildingAt = (x, y) => BUILDINGS.find((b) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h);
+// lanterns
+for (const [x, y] of [[3, 9], [13, 9], [21, 9], [27, 9], [29, 7], [33, 7], [37, 10], [41, 10], [37, 15], [41, 15], [46, 9], [22, 22], [29, 22]]) lamp(x, y);
+
+// field fence (gate at x=17) with sunflowers along the east side
+const fenceH = (x, y) => place({ kind: "fence", tx: x, ty: y, draw: () => Art.fenceH(x * T, y * T) });
+const fenceV = (x, y) => place({ kind: "fence", tx: x, ty: y, draw: () => Art.fenceV(x * T, y * T) });
+for (let x = 12; x <= 22; x++) { if (x !== 17) fenceH(x, 11); fenceH(x, 19); }
+for (let y = 12; y <= 18; y++) { fenceV(12, y); fenceV(22, y); }
+for (const y of [12, 14, 16, 18]) spriteEnt("sunflower", 21, y, 1, 1, 16, 30, () => Art.sunflowerSprite());
+// animal pen (gate at x=4)
+for (let x = 1; x <= 10; x++) { if (x !== 4) fenceH(x, 16); fenceH(x, 21); }
+for (let y = 17; y <= 20; y++) { fenceV(1, y); fenceV(10, y); }
+
+// trees: pine forest round the edge, orchards and blossoms inside
+for (let x = 0; x < MAP_W; x++) { if (x < 28 || x > 33) tree("pine", x, 0); if (!isWater(x, MAP_H - 1)) tree("pine", x, MAP_H - 1); }
+for (let y = 1; y < MAP_H - 1; y++) { if (y !== 8) { tree("pine", 0, y); if (!isWater(MAP_W - 1, y)) tree("pine", MAP_W - 1, y); } }
+for (let x = 1; x < 28; x += 2) if (x < 3 || x > 12) tree(x % 4 === 1 ? "pine" : "round", x, 1);
+for (const [x, y] of [[34, 1], [36, 2], [38, 1], [40, 2], [42, 1], [44, 2], [46, 1]]) tree("pine", x, y);
+for (const [x, y] of [[13, 22], [17, 25], [11, 26], [20, 27], [15, 27], [25, 25], [6, 24], [26, 20], [3, 23]]) tree("apple", x, y);
+for (const [x, y] of [[24, 6], [35, 4], [19, 3], [27, 4]]) tree("cherry", x, y);
+for (const [x, y] of [[2, 26], [4, 27], [8, 28], [1, 21], [12, 3], [25, 2]]) tree("pine", x, y);
+for (const [x, y, k] of [[11, 4, "pink"], [12, 5, "white"], [21, 6, "red"], [22, 7, "purple"], [34, 8 - 1, "pink"], [39, 7, "white"], [26, 7, "pink"], [33, 18, "red"], [36, 18, "white"], [46, 17, "purple"], [9, 22, "white"], [26, 9 + 1, "pink"]]) {
+  if (!owner[y][x] && walkableGround(x, y) && ground[y][x] === "g") bush(k, x, y);
+}
+
+const PLOTS = [];
+for (const y of [13, 15, 17]) for (const x of [14, 16, 18, 20]) PLOTS.push([x, y]);
 const plotAt = (x, y) => PLOTS.findIndex(([px, py]) => px === x && py === y);
-const propAt = (x, y) => Object.keys(PROPS).find((k) => PROPS[k][0] === x && PROPS[k][1] === y);
-const isOrby = (x, y) => x === orbyNpc.x / T && y === orbyNpc.y / T;
-const isWater = (x, y) => tiles[y]?.[x] === "w";
+const FIELD_GATE = [17, 11];
 
-function solid(x, y) {
-  if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H) return true;
-  const t = tiles[y][x];
-  return t === "t" || t === "w" || t === "fh" || t === "fv" || !!buildingAt(x, y) || !!propAt(x, y) || isOrby(x, y);
+function solidTile(x, y) {
+  if (!inMap(x, y)) return true;
+  if (!walkableGround(x, y)) return true;
+  return !!owner[y][x];
 }
 
-// ---------------------------------------------------------------- state
+// ================================================================ state
 
 const fresh = () => ({
   day: 1, minutes: 0, plots: PLOTS.map(() => null), journal: [], fishLog: [],
-  pond: [], pondDay: 0, spent: 0, px: 4 * T, py: 7 * T, dir: 0, metOrby: false,
+  pond: [], pondDay: 0, spent: 0, px: 7 * T, py: 8 * T, dir: 0, metOrby: false,
 });
 let S = fresh();
 
@@ -69,19 +139,139 @@ function load() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return;
     S = { ...fresh(), ...JSON.parse(raw) };
+    S.plots = PLOTS.map((_, i) => S.plots[i] || null);
     // A scout that was still out when the page closed can't report back.
     S.plots = S.plots.map((p) => (p && p.status === "growing" && !p.result ? { ...p, status: "wilted", error: "Your scout wandered off while you were away." } : p));
   } catch { S = fresh(); }
 }
 function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch {} }
 
-const player = { get x() { return S.px; }, set x(v) { S.px = v; }, get y() { return S.py; }, set y(v) { S.py = v; }, frame: 0, moving: false, animT: 0 };
+const player = { frame: 0, moving: false, animT: 0, get x() { return S.px; }, set x(v) { S.px = v; }, get y() { return S.py; }, set y(v) { S.py = v; } };
 let fishing = null;     // { tx, ty, phase: "wait" | "bite", at }
 let stockingPond = false;
 let started = false;
 let dialogOpen = false;
 
-// ---------------------------------------------------------------- input
+// ================================================================ actors
+
+const orbyNpc = place({ kind: "orby", tx: 19, ty: 6, draw: (t) => Art.orby(19 * T, 6 * T, t) });
+
+// Scout robots: one walks out of the Scout Station for every crop you plant.
+const bots = [];
+const tileC = ([x, y]) => [x * T, y * T];
+function routeToPlot(i) {
+  const [px, py] = PLOTS[i];
+  return [[15, 8], [17, 8], [17, 10], [17, py - 1], [px, py - 1]].map(tileC);
+}
+function spawnScoutBot(i, atPlot) {
+  const route = routeToPlot(i);
+  const start = atPlot ? route[route.length - 1] : [14 * T + 8, 8 * T];
+  const bot = { plot: i, x: start[0], y: start[1], path: atPlot ? [] : route, dir: 0, seed: Math.random() * 10, state: atPlot ? "work" : "walk" };
+  bots.push(bot);
+  return bot;
+}
+function sendBotHome(i) {
+  const bot = bots.find((b) => b.plot === i);
+  if (!bot) return;
+  bot.plot = null;
+  bot.state = "home";
+  bot.carrying = true;
+  bot.path = routeToPlot(i).reverse().concat([[14 * T + 8, 8 * T], [14 * T + 8, 7 * T + 8]]);
+}
+// Two farmhand bots that just potter about for atmosphere.
+const ambient = [
+  { x: 2 * T, y: 9 * T, hat: true, seed: 3, loop: [[2, 9], [4, 9], [4, 10], [4, 9], [10, 9], [10, 9], [2, 9]].map(tileC) },
+  { x: 13 * T, y: 12 * T, hat: true, seed: 7, loop: [[13, 12], [13, 18], [19, 18], [19, 12], [15, 12], [15, 18], [13, 18], [13, 12]].map(tileC) },
+  { x: 33 * T, y: 9 * T, seed: 5, loop: [[33, 9], [36, 9], [36, 16], [42, 16], [42, 9], [33, 9]].map(tileC) },
+];
+ambient.forEach((a) => { a.path = []; a.i = 0; a.dir = 0; a.wait = 0; a.ambient = true; });
+
+function stepAlongPath(a, dt, speed) {
+  if (!a.path.length) return false;
+  const [tx, ty] = a.path[0];
+  const dx = tx - a.x, dy = ty - a.y, d = Math.hypot(dx, dy);
+  const s = speed * dt;
+  if (d <= s) { a.x = tx; a.y = ty; a.path.shift(); }
+  else { a.x += (dx / d) * s; a.y += (dy / d) * s; }
+  if (Math.abs(dx) > Math.abs(dy)) a.dir = dx < 0 ? 2 : 3; else if (d > 0.1) a.dir = dy < 0 ? 1 : 0;
+  return true;
+}
+
+function updateBots(dt) {
+  for (const b of bots) {
+    b.moving = stepAlongPath(b, dt, 0.045);
+    if (!b.moving) {
+      if (b.state === "walk") b.state = "work";
+      if (b.state === "home") b.gone = true;
+      if (b.state === "work") b.dir = 0;
+    }
+    const p = b.plot != null ? S.plots[b.plot] : null;
+    b.busy = b.state === "work" && p && !isRipe(p);
+    b.carrying = b.state === "home" || (b.state === "work" && isRipe(p));
+  }
+  for (let i = bots.length - 1; i >= 0; i--) if (bots[i].gone) bots.splice(i, 1);
+  for (const a of ambient) {
+    if (a.wait > 0) { a.wait -= dt; a.moving = false; continue; }
+    if (!a.path.length) { a.i = (a.i + 1) % a.loop.length; a.path = [a.loop[a.i]]; if (Math.random() < 0.35) a.wait = rand(800, 2500); }
+    a.moving = stepAlongPath(a, dt, 0.03);
+  }
+}
+
+// Townsfolk who mill about the plaza and have opinions about meme coins.
+const LOOKS = [
+  { hair: "#3b2416", hat: null, shirt: "#e0483a", pants: "#55331b" },
+  { hair: "#f0d070", hat: C.straw, shirt: "#5aa05a", pants: "#3f6fc0" },
+  { hair: "#7a3a1a", hat: "#3f6fc0", shirt: "#f2f0e6", pants: "#6d4426" },
+  { hair: "#cfcfcf", hat: null, shirt: "#9b6ad8", pants: "#2e3245" },
+];
+const QUOTES = [
+  ["Mabel", "My grandson put his allowance into a frog coin. The frog is doing better than the stock market and I hate it."],
+  ["Gus", "I don't trust any coin whose logo is a dog in sunglasses. Two dogs in sunglasses? Now we're talking."],
+  ["Juniper", "The trick is to read the posts <i>before</i> the influencers do. That's why I keep a Chatter Carrot patch."],
+  ["Old Pete", "Back in my day a rug pull was something you did to a rug. Scout first, I always say."],
+  ["Mabel", "The fish in that lake are named after whatever's trending. Caught a $BONK last week. Lovely fish."],
+  ["Juniper", "Orbio credits are cheaper than buying AI straight from the big labs. My scouts run on pocket change."],
+];
+const FOLK_START = [[35, 13], [42, 10], [36, 17], [45, 14]];
+const folks = LOOKS.map((look, i) => ({ look, name: QUOTES[i][0], x: FOLK_START[i][0] * T, y: FOLK_START[i][1] * T, dir: 0, frame: 0, animT: 0, moving: false, t: 0, dx: 0, dy: 0, q: i }));
+const TOWN = { x0: 33, y0: 9, x1: 46, y1: 18 };
+
+function updateFolks(dt) {
+  for (const f of folks) {
+    f.t -= dt;
+    if (f.t <= 0) {
+      f.t = rand(900, 2600);
+      const r = Math.random();
+      [f.dx, f.dy] = r < 0.35 ? [0, 0] : [[1, 0], [-1, 0], [0, 1], [0, -1]][Math.floor(Math.random() * 4)];
+    }
+    f.moving = !!(f.dx || f.dy);
+    if (!f.moving) continue;
+    const nx = f.x + f.dx * 0.025 * dt, ny = f.y + f.dy * 0.025 * dt;
+    const ok = boxFree(nx, ny) && nx >= TOWN.x0 * T && ny >= TOWN.y0 * T && nx <= TOWN.x1 * T && ny <= TOWN.y1 * T && !nearPlayer(nx, ny);
+    if (ok) { f.x = nx; f.y = ny; } else f.t = 0;
+    f.dir = f.dx < 0 ? 2 : f.dx > 0 ? 3 : f.dy < 0 ? 1 : 0;
+    f.animT += dt; f.frame = Math.floor(f.animT / 180) % 2;
+  }
+}
+const nearPlayer = (x, y) => Math.abs(x - player.x) < 12 && Math.abs(y - player.y) < 10;
+
+// Animals in the pen.
+const animals = [
+  { kind: "cow", x: 3 * T, y: 18 * T }, { kind: "cow", x: 7 * T, y: 19 * T },
+  { kind: "chicken", x: 5 * T, y: 17 * T }, { kind: "chicken", x: 8 * T, y: 17 * T }, { kind: "chicken", x: 3 * T, y: 20 * T },
+].map((a, i) => ({ ...a, seed: i, dir: 3, t: 0, dx: 0, dy: 0 }));
+function updateAnimals(dt) {
+  for (const a of animals) {
+    a.t -= dt;
+    if (a.t <= 0) { a.t = rand(1200, 3500); [a.dx, a.dy] = Math.random() < 0.5 ? [0, 0] : [rand(-1, 1), rand(-0.6, 0.6)]; }
+    const sp = a.kind === "cow" ? 0.008 : 0.014;
+    a.x = Math.max(2 * T, Math.min(8.5 * T, a.x + a.dx * sp * dt));
+    a.y = Math.max(16.6 * T, Math.min(19.8 * T, a.y + a.dy * sp * dt));
+    if (a.dx) a.dir = a.dx < 0 ? 2 : 3;
+  }
+}
+
+// ================================================================ input
 
 const held = new Set();
 const KEYMAP = { ArrowUp: "up", KeyW: "up", ArrowDown: "down", KeyS: "down", ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right" };
@@ -103,7 +293,6 @@ addEventListener("keydown", (e) => {
 addEventListener("keyup", (e) => { if (KEYMAP[e.code]) held.delete(KEYMAP[e.code]); });
 addEventListener("blur", () => held.clear());
 
-// touch pad
 if (matchMedia("(pointer: coarse)").matches) {
   document.querySelectorAll(".dpad button").forEach((b) => {
     const on = (e) => { e.preventDefault(); held.add(b.dataset.dir); b.classList.add("on"); };
@@ -114,7 +303,7 @@ if (matchMedia("(pointer: coarse)").matches) {
   $("aBtn").addEventListener("pointerdown", (e) => { e.preventDefault(); if (!dialogOpen) interact(); });
 }
 
-// ---------------------------------------------------------------- UI helpers
+// ================================================================ UI helpers
 
 let toastTimer;
 function toast(msg, ms = 2600) {
@@ -128,24 +317,33 @@ function toast(msg, ms = 2600) {
 function icon(draw, size = 16) {
   const c = document.createElement("canvas");
   c.width = c.height = size;
+  const prev = Art.getContext();
   Art.useContext(c.getContext("2d"));
   draw(performance.now());
-  Art.useContext(ctx);
+  Art.useContext(prev);
   return c;
 }
 const ICONS = {
   orby: () => icon((t) => Art.orby(0, 0, t)),
-  farmer: () => icon(() => Art.farmer(0, 0, 0, 0, false)),
-  chatter: () => icon((t) => Art.crop(0, 1, "chatter", 3, 1)),
-  rumor: () => icon((t) => Art.crop(0, 1, "rumor", 3, 1)),
-  mail: () => icon(() => Art.mailbox(0, 0, true)),
-  board: () => icon(() => Art.board(0, 0)),
+  farmer: () => icon(() => Art.person(0, 1, 0, 0, false)),
+  robot: () => icon((t) => Art.robot(0, 2, 0, 1000, { busy: true })),
+  chatter: () => icon(() => Art.crop(0, 1, "chatter", 3, 1)),
+  rumor: () => icon(() => Art.crop(0, 1, "rumor", 3, 1)),
+  mail: () => icon(() => Art.getContext().drawImage(Art.mailbox(true), 0, -3)),
+  board: () => icon(() => Art.getContext().drawImage(Art.board(), 0, -6)),
+  coin: () => icon(() => { const g = Art.getContext(); g.fillStyle = C.gold2; g.beginPath(); g.arc(8, 8, 7, 0, 7); g.fill(); g.fillStyle = C.gold; g.beginPath(); g.arc(8, 8, 5, 0, 7); g.fill(); }),
+  person: (look) => () => icon(() => Art.person(0, 1, 0, 0, false, look)),
 };
 
-// html: string. buttons: [{ label, primary, onClick }]. who: { name, icon }.
-function openDialog({ who, html, buttons = [{ label: "OK", primary: true }], onOpen }) {
+// html: string. buttons: [{ label, primary, onClick, keepOpen }]. who: { name, icon }. banner: image url.
+function openDialog({ who, html, banner, buttons = [{ label: "OK", primary: true }], onOpen }) {
   const d = $("dialog");
   d.innerHTML = "";
+  if (banner) {
+    const img = document.createElement("img");
+    img.className = "banner"; img.src = banner; img.alt = "";
+    d.append(img);
+  }
   if (who) {
     const w = document.createElement("div");
     w.className = "who";
@@ -180,29 +378,37 @@ function closeDialog() {
   $("dialog").hidden = true;
   dialogOpen = false;
   document.body.classList.remove("dialog-open");
-  canvas.focus?.();
 }
 
 const ORBY = { name: "Orby", icon: ICONS.orby };
 
-// ---------------------------------------------------------------- interactions
+// ================================================================ interactions
 
 function facingTile() {
   const cx = player.x + 8, cy = player.y + 12;
   const [dx, dy] = [[0, 1], [0, -1], [-1, 0], [1, 0]][S.dir];
-  return [Math.floor((cx + dx * 12) / T), Math.floor((cy + dy * 12) / T)];
+  return [Math.floor((cx + dx * 12) / T), Math.floor((cy + dy * 16) / T)];
 }
 const standingTile = () => [Math.floor((player.x + 8) / T), Math.floor((player.y + 12) / T)];
+
+function personAt(x, y) {
+  const cx = x * T + 8, cy = y * T + 8;
+  return folks.find((f) => Math.abs(f.x + 8 - cx) < 14 && Math.abs(f.y + 10 - cy) < 14);
+}
 
 function interact() {
   if (fishing) return reelIn();
   const [fx, fy] = facingTile();
-  const b = buildingAt(fx, fy);
-  if (b) return b.kind === "house" ? visitHouse() : visitStore();
-  const prop = propAt(fx, fy);
-  if (prop === "mailbox") return openMailbox();
-  if (prop === "board") return openJournal();
-  if (isOrby(fx, fy)) return talkToOrby();
+  const folk = personAt(fx, fy);
+  if (folk) return chat(folk);
+  const e = inMap(fx, fy) ? owner[fy][fx] : null;
+  if (e) {
+    const actions = {
+      house: visitHouse, silo: visitSilo, station: visitStation, barn: visitBarn, greenhouse: visitGreenhouse,
+      gazette: visitGazette, fountain: visitFountain, stall: visitStall, mailbox: openMailbox, board: () => openJournal(), orby: () => talkToOrby(),
+    };
+    if (actions[e.kind]) return actions[e.kind]();
+  }
   for (const [x, y] of [[fx, fy], standingTile()]) {
     const i = plotAt(x, y);
     if (i >= 0) return usePlot(i);
@@ -213,12 +419,12 @@ function interact() {
 // --- Orby
 
 const TIPS = [
-  "Welcome to Orbio Valley! I'm Orby. Every crop on this farm is a little AI scout that goes out and reads the internet about a meme coin.",
-  "Walk into the field and press <b>Space</b> (or <b>A</b>) on an empty patch of soil. Pick a seed, give it a ticker like <b>$PEPE</b>, and it ripens with a report.",
-  "<b>Chatter Carrots</b> read what people on X are posting. <b>Rumor Radishes</b> search the open web. Both are summed up by an AI model.",
-  "Stand on the dock and cast into the pond to catch whatever coins are trending today. Rarer fish = more hype. The pond restocks every morning.",
-  "Everything runs on <b>Orbio</b>: one balance pays for the AI model <i>and</i> the X and web reads. Check the mailbox to sign in.",
-  "Remember: scouts only look. Hype isn't value, and lots of these coins are rugs. Have fun, don't bet the farm!",
+  "Welcome to Orbio Valley! I'm Orby. Every crop on this farm is grown by a little AI scout robot that reads the internet about a meme coin.",
+  "Head into the fenced field and press <b>Space</b> (or <b>A</b>) on an empty patch of soil. Pick a seed, give it a ticker like <b>$PEPE</b>, and a robot will tend it.",
+  "<b>Chatter Carrots</b> read what people on X are posting. <b>Rumor Radishes</b> search the open web. When it ripens you harvest the report.",
+  "Walk down to the lake dock and cast a line to catch whatever coins are trending today. Rarer fish means more hype. The lake restocks every morning.",
+  "Everything runs on <b>Orbio</b>: one balance pays for the AI model <i>and</i> the X and web reads. Check the mailbox to sign in, and the silo to see your spending.",
+  "Over the bridge is town. Folks there love to gossip about coins. Remember: scouts only look. Hype isn't value, and lots of these coins are rugs!",
 ];
 let tipIndex = 0;
 function talkToOrby(first) {
@@ -235,13 +441,21 @@ function talkToOrby(first) {
   });
 }
 
-// --- house & store
+function chat(f) {
+  f.dx = f.dy = 0; f.t = 3000;
+  f.dir = player.x < f.x - 6 ? 2 : player.x > f.x + 6 ? 3 : player.y < f.y ? 1 : 0;
+  const [name, line] = QUOTES[f.q % QUOTES.length];
+  f.q += LOOKS.length;
+  openDialog({ who: { name, icon: ICONS.person(f.look) }, html: `<p>${line}</p>` });
+}
+
+// --- places
 
 function visitHouse() {
   openDialog({
     who: { name: "Farmhouse", icon: ICONS.farmer },
-    html: `<p>It's ${clockText()}. Go to bed and start Day ${S.day + 1}? The pond restocks with fresh trending coins in the morning.</p>`,
-    buttons: [{ label: "Sleep", primary: true, onClick: sleep }, { label: "Not yet" }],
+    html: `<p>It's ${clockText()}. Go to bed and start Day ${S.day + 1}? The lake restocks with fresh trending coins in the morning.</p>`,
+    buttons: [{ label: "Sleep", primary: true, onClick: () => sleep() }, { label: "Not yet" }],
   });
 }
 
@@ -249,25 +463,63 @@ function sleep(passedOut) {
   fishing = null;
   S.day += 1;
   S.minutes = 0;
-  S.px = 4 * T; S.py = 7 * T; S.dir = 0;
+  S.px = 7 * T; S.py = 8 * T; S.dir = 0;
   save();
-  fadeNight();
-  toast(passedOut ? `You passed out at 2am… Day ${S.day}` : `☀ Good morning! Day ${S.day}`, 3200);
+  const card = $("sleepCard");
+  $("sleepDay").textContent = `Day ${S.day}`;
+  $("sleepMsg").textContent = passedOut ? "You stayed out too late and passed out… the robots carried you home." : "The robots kept watch over the farm all night.";
+  card.hidden = false;
+  card.classList.remove("fade");
+  setTimeout(() => card.classList.add("fade"), 2200);
+  setTimeout(() => { card.hidden = true; toast(`☀ Good morning! Day ${S.day}`); }, 3000);
 }
 
-let fadeUntil = 0;
-const fadeNight = () => { fadeUntil = performance.now() + 900; };
-
-function visitStore() {
+function visitStation() {
+  const working = bots.filter((b) => b.state === "work" || b.state === "walk").length;
   openDialog({
-    who: { name: "Orbio General Store", icon: ICONS.orby },
-    html: `<p>Every scout on this farm runs on <b>Orbio credits</b>. One balance pays for the AI model and the X and web reads it does.</p>
-      <p>Orbio sells credits below list price, resold by people who earned them. Want to see how much you'd save on your own AI bill?</p>`,
+    banner: "assets/banner-station.webp",
+    who: { name: "Scout Station", icon: ICONS.robot },
+    html: `<p>This is where your scout robots charge up. Every seed you plant sends one out to the field. It reads X or the web through Orbio, asks an AI model what it all means, and grows the answer into a crop.</p>
+      <p><b>${working}</b> scout${working === 1 ? "" : "s"} out in the field right now.</p>`,
+  });
+}
+
+function visitSilo() {
+  openDialog({
+    who: { name: "Credit Silo", icon: ICONS.coin },
+    html: `<p>The silo keeps track of the Orbio credits your farm burns through. 1 CREDIT = $1 of AI and data.</p>
+      <p>Spent on scouting so far: <b>${S.spent.toFixed(4)} CREDIT</b>${Orbio.isSignedIn() ? "" : " (pretend mode is free)"}.</p>
+      <p>Orbio sells credits below list price, resold by people who earned them. Want to see how much it would save on your own AI bill?</p>`,
     buttons: [
       { label: "🐷 Open the piggy bank", primary: true, onClick: () => open("piggy.html", "_blank", "noopener") },
       { label: "Visit orbio.so", onClick: () => open("https://www.orbio.so", "_blank", "noopener") },
       { label: "Leave" },
     ],
+  });
+}
+
+function visitBarn() {
+  openDialog({ who: { name: "Barn", icon: ICONS.robot }, html: `<p>The cows don't care about meme coins. The chickens are suspiciously into $EGG.</p>` });
+}
+function visitGreenhouse() {
+  openDialog({ who: { name: "Greenhouse", icon: ICONS.robot }, html: `<p>Warm and glowing. A sign on the door says: <i>"Rare seeds coming soon: Whale Watermelons that track big wallets on-chain."</i></p>` });
+}
+function visitStall() {
+  const lines = ["Fresh turnips! Not a coin. Just turnips.", "Today's special: a pumpkin shaped like a candle chart.", "I'll trade you an apple for one hot tip.", "Sunflowers! They always point up, unlike my portfolio."];
+  openDialog({ who: { name: "Market stall", icon: ICONS.person(LOOKS[1]) }, html: `<p>${lines[Math.floor(Math.random() * lines.length)]}</p>` });
+}
+function visitFountain() {
+  openDialog({ who: { name: "The Coin Cat statue", icon: ICONS.coin }, html: `<p>The town's founding cat, cast in stone, clutching a single golden coin. Locals toss pebbles in and whisper tickers for luck.</p>` });
+}
+
+function visitGazette() {
+  const recent = [...S.fishLog.slice(0, 3)];
+  openDialog({
+    banner: "assets/banner-town.webp",
+    who: { name: "The Meme Gazette", icon: ICONS.coin },
+    html: `<p>"Read all about it! Whatever the valley is buzzing about, the lake is full of it. Our reporters are robots, our sources are posts on X, and none of this is financial advice."</p>
+      ${recent.length ? `<p>Latest catches around town:</p>${recent.map(fishCard).join("")}` : `<p class="hint">Nothing in the paper yet. Go catch something from the lake dock!</p>`}`,
+    buttons: [{ label: "Read the whole journal", primary: true, onClick: () => openJournal("fish") }, { label: "Leave" }],
   });
 }
 
@@ -322,9 +574,10 @@ function usePlot(i) {
   if (!p) return chooseSeed(i);
   if (p.status === "wilted") {
     S.plots[i] = null; save();
+    sendBotHome(i);
     return openDialog({ who: ORBY, html: `<p>This one wilted. ${esc(p.error)}</p><p class="hint">I cleared the soil so you can replant.</p>` });
   }
-  if (p.status === "growing" && !(isRipe(p))) {
+  if (!isRipe(p)) {
     const left = Math.max(0, Math.ceil((p.plantedAt + GROW_MS - Date.now()) / 1000));
     return toast(left > 0 ? `${SEEDS[p.kind].name} for $${p.ticker} — ripe in ${left}s` : `The $${p.ticker} scout is still out reading…`);
   }
@@ -379,7 +632,8 @@ function plantSeed(i, kind, ticker) {
   const plot = { kind, ticker, plantedAt: Date.now(), status: "growing", result: null };
   S.plots[i] = plot;
   save();
-  toast(`🌱 Planted a ${SEEDS[kind].name} for $${ticker}`);
+  spawnScoutBot(i);
+  toast(`🌱 Planted a ${SEEDS[kind].name} for $${ticker}. A scout bot is on its way!`);
   SEEDS[kind].run(ticker)
     .then((res) => { if (S.plots[i] === plot) { plot.result = res; save(); } })
     .catch((err) => {
@@ -409,10 +663,11 @@ function harvest(i) {
   S.spent += r.cost || 0;
   S.plots[i] = null;
   save();
+  sendBotHome(i);
   if (r.real) refreshBalance();
   openDialog({
     who: { name: `${SEEDS[p.kind].name} harvested!`, icon: ICONS[p.kind] },
-    html: cropCard(entry) + `<p class="hint">Saved to the bulletin board (press J).</p>`,
+    html: cropCard(entry) + `<p class="hint">Your scout bot is carrying the crate home. Saved to the bulletin board (press J).</p>`,
     buttons: [{ label: "Nice", primary: true }],
   });
 }
@@ -435,10 +690,10 @@ const RARITY = (h) => (h >= 85 ? "legendary" : h >= 60 ? "rare" : h >= 30 ? "unc
 const FISH_COLOR = { common: "#9a9488", uncommon: "#4fa8e0", rare: "#9a6ae0", legendary: "#ffd34d" };
 
 async function cast(tx, ty) {
-  if (stockingPond) return toast("Orby is still stocking the pond…");
+  if (stockingPond) return toast("Orby is still stocking the lake…");
   if (S.pondDay !== S.day) {
     stockingPond = true;
-    toast("🎣 Orby is stocking the pond with today's trending coins…", 6000);
+    toast("🎣 Orby is stocking the lake with today's trending coins…", 6000);
     try {
       const res = await Orbio.scoutPond();
       S.pond = res.fish;
@@ -446,7 +701,7 @@ async function cast(tx, ty) {
       S.spent += res.cost || 0;
       save();
       if (res.real) refreshBalance();
-      toast(S.pond.length ? `The pond is stocked: ${S.pond.length} fish today!` : "Nothing's biting today. Try again tomorrow.");
+      toast(S.pond.length ? `The lake is stocked: ${S.pond.length} fish today! Cast again.` : "Nothing's biting today. Try again tomorrow.");
     } catch (err) {
       toast(errorText(err), 4000);
     } finally {
@@ -454,7 +709,7 @@ async function cast(tx, ty) {
     }
     return;
   }
-  if (!S.pond.length) return toast("You've fished the pond empty! Sleep to restock it.");
+  if (!S.pond.length) return toast("You've fished the lake empty! Sleep to restock it.");
   fishing = { tx, ty, phase: "wait", at: performance.now() + 1500 + Math.random() * 3000 };
   toast("Cast! Wait for the ❗ then press again.");
 }
@@ -499,7 +754,7 @@ function openJournal(tab = "crops") {
   const crops = S.journal, fish = S.fishLog;
   const list = tab === "crops"
     ? (crops.length ? crops.map(cropCard).join("") : `<p class="empty">No harvests yet. Plant a seed in the field!</p>`)
-    : (fish.length ? fish.map(fishCard).join("") : `<p class="empty">No fish yet. Cast from the dock!</p>`);
+    : (fish.length ? fish.map(fishCard).join("") : `<p class="empty">No fish yet. Cast from the lake dock!</p>`);
   openDialog({
     who: { name: "Bulletin board", icon: ICONS.board },
     html: `<div class="tabs">
@@ -511,7 +766,7 @@ function openJournal(tab = "crops") {
   });
 }
 
-// ---------------------------------------------------------------- update & draw
+// ================================================================ update
 
 function clockText() {
   const total = 6 * 60 + S.minutes;
@@ -543,18 +798,22 @@ function move(dt) {
   if (!player.moving) return;
   if (fishing) { fishing = null; toast("You reeled in your line."); }
   if (dx) S.dir = dx < 0 ? 2 : 3; else S.dir = dy < 0 ? 1 : 0;
-  const len = Math.hypot(dx, dy), speed = 0.07 * dt;
+  const len = Math.hypot(dx, dy), speed = 0.075 * dt;
   tryMove((dx / len) * speed, 0);
   tryMove(0, (dy / len) * speed);
   player.animT += dt;
-  player.frame = Math.floor(player.animT / 160) % 2;
+  player.frame = Math.floor(player.animT / 150) % 2;
 }
 
+// feet hitbox
+function boxFree(nx, ny) {
+  return ![[nx + 4, ny + 10], [nx + 11.9, ny + 10], [nx + 4, ny + 15.9], [nx + 11.9, ny + 15.9]]
+    .some(([x, y]) => solidTile(Math.floor(x / T), Math.floor(y / T)));
+}
 function tryMove(dx, dy) {
   const nx = player.x + dx, ny = player.y + dy;
-  // feet hitbox
-  const box = [[nx + 4, ny + 10], [nx + 11.9, ny + 10], [nx + 4, ny + 15.9], [nx + 11.9, ny + 15.9]];
-  if (box.some(([x, y]) => solid(Math.floor(x / T), Math.floor(y / T)))) return;
+  if (!boxFree(nx, ny)) return;
+  if (folks.some((f) => Math.abs(f.x - nx) < 9 && Math.abs(f.y - ny) < 6)) return;
   player.x = nx; player.y = ny;
 }
 
@@ -564,78 +823,164 @@ function cropStage(p) {
   return Math.min(2, Math.floor(((Date.now() - p.plantedAt) / GROW_MS) * 3));
 }
 
+// ================================================================ draw
+
+// Static ground is painted once into an offscreen canvas.
+const groundLayer = document.createElement("canvas");
+groundLayer.width = MAP_W * T; groundLayer.height = MAP_H * T;
+function paintGround() {
+  const prev = Art.getContext();
+  Art.useContext(groundLayer.getContext("2d"));
+  for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
+    const g = ground[y][x], px = x * T, py = y * T;
+    if (g === "c") Art.cobble(px, py, x, y);
+    else if (g === "d") Art.dirt(px, py, x, y);
+    else if (g === "r") Art.cliff(px, py);
+    else if (g === "b") Art.bridge(px, py, true, true);
+    else if (g === "k") Art.dock(px, py);
+    else if (g === "w" || g === "f") Art.water(px, py, x, y, 0);
+    else Art.grass(px, py, x, y);
+    if (walkableGround(x, y) && g !== "b" && g !== "k") Art.bank(px, py, isWater(x, y - 1), isWater(x, y + 1), isWater(x - 1, y), isWater(x + 1, y));
+  }
+  Art.useContext(prev);
+}
+
+// Light level through the day: 0 = noon, 1 = deep night. Plus a warm sunset tint.
+function lighting() {
+  const h = 6 + S.minutes / 60;
+  const night = h < 7 ? 0.35 * (7 - h) : h < 17 ? 0 : h < 20.5 ? (h - 17) / 3.5 : 1;
+  const sunset = h < 7 ? 0.5 * (7 - h) : h < 16 ? 0 : h < 18.5 ? (h - 16) / 2.5 : h < 20.5 ? 1 - (h - 18.5) / 2 : 0;
+  return { night: Math.max(0, Math.min(1, night)), sunset: Math.max(0, Math.min(1, sunset)), lit: h >= 17.5 || h < 6.5 };
+}
+
+const lightLayer = document.createElement("canvas");
+lightLayer.width = VIEW_W; lightLayer.height = VIEW_H;
+const lctx = lightLayer.getContext("2d");
+
+const fireflies = Array.from({ length: 26 }, () => ({ x: rand(1, MAP_W - 1) * T, y: rand(9, MAP_H - 2) * T, ph: rand(0, 6.28) }));
+
 function draw(now) {
   const camX = Math.round(Math.max(0, Math.min(MAP_W * T - VIEW_W, player.x + 8 - VIEW_W / 2)));
   const camY = Math.round(Math.max(0, Math.min(MAP_H * T - VIEW_H, player.y + 8 - VIEW_H / 2)));
+  const L = lighting();
   ctx.save();
   ctx.translate(-camX, -camY);
+  ctx.drawImage(groundLayer, camX, camY, VIEW_W, VIEW_H, camX, camY, VIEW_W, VIEW_H);
 
+  // animated water
   const x0 = Math.floor(camX / T), y0 = Math.floor(camY / T);
-  for (let y = y0; y <= y0 + VIEW_H / T; y++) for (let x = x0; x <= x0 + VIEW_W / T; x++) {
-    const t = tiles[y]?.[x];
-    if (!t) continue;
-    const px = x * T, py = y * T;
-    if (t === "p") Art.path(px, py, x, y);
-    else if (t === "w" || t === "d") {
-      Art.water(px, py, x, y, now);
-      Art.shore(px, py, !isWater(x, y - 1) && tiles[y - 1]?.[x] !== "d", !isWater(x, y + 1), !isWater(x - 1, y) && tiles[y]?.[x - 1] !== "d", !isWater(x + 1, y));
-      if (t === "d") Art.dock(px, py);
-    } else Art.grass(px, py, x, y);
-    if (t === "fh") Art.fence(px, py, true);
-    if (t === "fv") Art.fence(px, py, false);
+  for (let y = y0; y <= y0 + VIEW_H / T + 1; y++) for (let x = x0; x <= x0 + VIEW_W / T + 1; x++) {
+    if (!inMap(x, y)) continue;
+    const g = ground[y][x];
+    if (g === "w") Art.water(x * T, y * T, x, y, now);
+    else if (g === "f") Art.waterfall(x * T, y * T, now);
   }
 
+  // plots and crops
+  const lights = [];
   PLOTS.forEach(([x, y], i) => {
     const p = S.plots[i];
-    Art.soil(x * T, y * T, !!p && p.status !== "wilted");
+    Art.soilPlot(x * T, y * T, !!p && p.status !== "wilted");
     const st = cropStage(p);
     if (st >= 0) {
-      Art.crop(x * T, y * T, p.kind, st, now);
-      if (st === 2 && !p.result) Art.sproutWaiting(x * T, y * T, now);
+      Art.crop(x * T, y * T, p.kind, st, now, L.lit);
+      if (st === 3) lights.push([x * T + 8, y * T + 8, 22, "rgba(120,255,200,"]);
     }
     if (p?.status === "wilted") { ctx.fillStyle = "#8a7a5a"; ctx.fillRect(x * T + 6, y * T + 8, 4, 4); }
   });
 
-  for (const b of BUILDINGS) {
-    const [r1, r2] = b.kind === "house" ? [Art.COLORS.roof, Art.COLORS.roof2] : [Art.COLORS.roofStore, Art.COLORS.roofStore2];
-    Art.house(b.x * T, b.y * T, b.w * T, b.h * T, r1, r2, b.sign);
+  // everything that stands up, sorted by where it touches the ground
+  const viewL = camX - 64, viewR = camX + VIEW_W + 64, viewT = camY - 16, viewB = camY + VIEW_H + 120;
+  const list = [];
+  for (const e of ents) {
+    if (e.kind === "orby") continue;
+    const ex = e.x ?? e.tx * T;
+    if (ex > viewR || ex + (e.w || T) < viewL || e.baseY < viewT || e.baseY > viewB) continue;
+    list.push({ y: e.baseY, draw: () => { e.draw(now, L.lit); e.after?.(e, now); } });
+    if (L.lit && e.lights) for (const [lx, ly, rad] of e.lights) lights.push([e.x + lx, e.y + ly, rad]);
   }
-  Art.mailbox(PROPS.mailbox[0] * T, PROPS.mailbox[1] * T, !Orbio.isSignedIn());
-  Art.board(PROPS.board[0] * T, PROPS.board[1] * T);
+  list.push({ y: orbyNpc.baseY, draw: () => orbyNpc.draw(now) });
+  if (!S.metOrby && started) list.push({ y: 9999, draw: () => Art.exclaim(19 * T, 6 * T - 2) });
+  list.push({ y: player.y + 16, draw: () => Art.person(Math.round(player.x), Math.round(player.y), S.dir, player.frame, player.moving) });
+  for (const b of [...bots, ...ambient]) list.push({ y: b.y + 16, draw: () => Art.robot(Math.round(b.x), Math.round(b.y), b.dir, now, b) });
+  for (const f of folks) list.push({ y: f.y + 16, draw: () => Art.person(Math.round(f.x), Math.round(f.y), f.dir, f.frame, f.moving, f.look) });
+  for (const a of animals) list.push({ y: a.y + 16, draw: () => (a.kind === "cow" ? Art.cow(Math.round(a.x), Math.round(a.y), a.dir, now) : Art.chicken(Math.round(a.x), Math.round(a.y), now, a.seed)) });
+  list.sort((a, b) => a.y - b.y);
+  for (const it of list) it.draw();
 
-  // trees after the ground so their canopies sit on top
-  for (let y = y0; y <= y0 + VIEW_H / T; y++) for (let x = x0; x <= x0 + VIEW_W / T; x++) if (tiles[y]?.[x] === "t") Art.tree(x * T, y * T);
-
-  const drawPlayer = () => Art.farmer(Math.round(player.x), Math.round(player.y), S.dir, player.frame, player.moving);
-  const drawOrby = () => Art.orby(orbyNpc.x, orbyNpc.y, now);
-  if (player.y > orbyNpc.y) { drawOrby(); drawPlayer(); } else { drawPlayer(); drawOrby(); }
-  if (!S.metOrby && started) Art.exclaim(orbyNpc.x, orbyNpc.y - 2);
+  // festival bunting across the plaza
+  Art.bunting(37 * T + 8, 10 * T - 12, 41 * T + 8, 10 * T - 12, now);
+  Art.bunting(37 * T + 8, 15 * T - 12, 41 * T + 8, 15 * T - 12, now);
 
   if (fishing) {
     const bx = fishing.tx * T, by = fishing.ty * T;
-    ctx.strokeStyle = "rgba(255,255,255,.7)";
+    ctx.strokeStyle = "rgba(255,255,255,.75)";
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(player.x + 13, player.y + 4); ctx.quadraticCurveTo((player.x + bx) / 2 + 8, Math.min(player.y, by) - 6, bx + 8, by + 7); ctx.stroke();
     Art.bobber(bx, by, now, fishing.phase === "bite");
-    if (fishing.phase === "bite") Art.exclaim(Math.round(player.x), Math.round(player.y) - 2);
+    if (fishing.phase === "bite") Art.exclaim(Math.round(player.x), Math.round(player.y) - 4);
   }
 
-  // a little sparkle on the tile you'd interact with
+  // highlight what you'd interact with
   if (started && !dialogOpen && !fishing) {
     const [fx, fy] = facingTile();
-    const p = plotAt(fx, fy) >= 0 ? S.plots[plotAt(fx, fy)] : undefined;
-    const interesting = buildingAt(fx, fy) || propAt(fx, fy) || isOrby(fx, fy) || plotAt(fx, fy) >= 0 || isWater(fx, fy);
+    const pi = plotAt(fx, fy);
+    const e = inMap(fx, fy) ? owner[fy][fx] : null;
+    const interesting = personAt(fx, fy) || (e && e.kind !== "tree" && e.kind !== "fence" && e.kind !== "bush" && e.kind !== "lantern") || pi >= 0 || isWater(fx, fy);
     if (interesting && Math.floor(now / 400) % 2) {
-      ctx.strokeStyle = isRipe(p) ? Art.COLORS.gold : "rgba(255,255,255,.75)";
+      ctx.strokeStyle = pi >= 0 && isRipe(S.plots[pi]) ? C.gold : "rgba(255,255,255,.8)";
       ctx.strokeRect(fx * T + 0.5, fy * T + 0.5, T - 1, T - 1);
     }
   }
   ctx.restore();
 
-  // evening & night tint
-  const evening = Math.max(0, Math.min(1, (S.minutes - 12 * 60) / 180));
-  if (evening > 0) { ctx.fillStyle = `rgba(30, 20, 80, ${evening * 0.45})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
-  if (now < fadeUntil) { ctx.fillStyle = `rgba(10, 8, 25, ${(fadeUntil - now) / 900})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
+  // ---- lighting pass
+  if (L.sunset > 0) {
+    ctx.save();
+    ctx.globalCompositeOperation = "soft-light";
+    ctx.fillStyle = `rgba(255,120,60,${0.55 * L.sunset})`;
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = `rgba(255,150,90,${0.12 * L.sunset})`;
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    ctx.restore();
+  }
+  if (L.night > 0) {
+    lights.push([player.x + 8, player.y + 8, 30]);
+    lctx.globalCompositeOperation = "source-over";
+    lctx.clearRect(0, 0, VIEW_W, VIEW_H);
+    lctx.fillStyle = `rgba(16,14,52,${0.68 * L.night})`;
+    lctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    lctx.globalCompositeOperation = "destination-out";
+    for (const [lx, ly, rad] of lights) {
+      const x = lx - camX, y = ly - camY;
+      if (x < -rad || y < -rad || x > VIEW_W + rad || y > VIEW_H + rad) continue;
+      const g = lctx.createRadialGradient(x, y, 0, x, y, rad);
+      g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(1, "rgba(0,0,0,0)");
+      lctx.fillStyle = g; lctx.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+    }
+    ctx.drawImage(lightLayer, 0, 0);
+    // warm additive glow
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    for (const [lx, ly, rad, tint] of lights) {
+      const x = lx - camX, y = ly - camY;
+      if (x < -rad || y < -rad || x > VIEW_W + rad || y > VIEW_H + rad) continue;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, rad * 0.8);
+      g.addColorStop(0, `${tint || "rgba(255,170,70,"}${(0.32 * L.night).toFixed(2)})`); g.addColorStop(1, `${tint || "rgba(255,170,70,"}0)`);
+      ctx.fillStyle = g; ctx.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+    }
+    // fireflies
+    for (const f of fireflies) {
+      const fx = f.x + Math.sin(now / 1300 + f.ph) * 12 - camX, fy = f.y + Math.cos(now / 1700 + f.ph * 2) * 8 - camY;
+      const a = (0.5 + 0.5 * Math.sin(now / 300 + f.ph * 5)) * L.night;
+      ctx.fillStyle = `rgba(230,255,140,${a.toFixed(2)})`;
+      ctx.fillRect(Math.round(fx), Math.round(fy), 1, 1);
+      ctx.fillStyle = `rgba(230,255,140,${(a * 0.25).toFixed(2)})`;
+      ctx.fillRect(Math.round(fx) - 1, Math.round(fy) - 1, 3, 3);
+    }
+    ctx.restore();
+  }
 }
 
 let last = performance.now();
@@ -647,6 +992,9 @@ function frame(now) {
     updateClock(dt);
     updateFishing(now);
   }
+  updateBots(dt);
+  updateFolks(dt);
+  updateAnimals(dt);
   canvas.dataset.fishing = fishing?.phase || "";
   draw(now);
   requestAnimationFrame(frame);
@@ -660,7 +1008,7 @@ function fit() {
 }
 addEventListener("resize", fit);
 
-// ---------------------------------------------------------------- boot
+// ================================================================ boot
 
 function start() {
   if (started) return;
@@ -674,16 +1022,10 @@ function start() {
 
 (async () => {
   load();
+  // Robots go back to any plots that are still growing or waiting to be picked.
+  S.plots.forEach((p, i) => { if (p && p.status !== "wilted") spawnScoutBot(i, true); });
+  paintGround();
   fit();
-  const titleOrb = $("titleOrb").getContext("2d");
-  titleOrb.imageSmoothingEnabled = false;
-  const animateTitle = (t) => {
-    if (started) return;
-    titleOrb.clearRect(0, 0, 32, 32);
-    Art.useContext(titleOrb); titleOrb.save(); titleOrb.scale(2, 2); Art.orby(0, 0, t); titleOrb.restore(); Art.useContext(ctx);
-    requestAnimationFrame(animateTitle);
-  };
-  requestAnimationFrame(animateTitle);
   requestAnimationFrame(frame);
 
   $("playBtn").addEventListener("click", start);
@@ -691,7 +1033,6 @@ function start() {
     if (Orbio.isConfigured()) Orbio.signIn();
     else { start(); setTimeout(openMailbox, 450); }
   });
-  if (Orbio.isConfigured()) $("titleSignIn").textContent = "Sign in with Orbio";
 
   const result = await Orbio.handleRedirect();
   if (result === "signed-in") { start(); toast(`✨ Signed in with Orbio${Orbio.playerName() ? ` as @${Orbio.playerName()}` : ""}. Scouts are live!`, 4000); }
