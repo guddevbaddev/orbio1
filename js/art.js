@@ -303,8 +303,7 @@ export const silo = () => cached("silo", 32, 88, () => {
   r(0, 76, 4, 4, C.metal); r(28, 70, 4, 10, C.metal2);
 });
 
-export function station(t, lit) {
-  const c = cached(`station-${lit}`, 32, 48, () => {
+export const stationBody = (lit) => cached(`station-${lit}`, 32, 48, () => {
     shadow(16, 46, 16, 3);
     r(2, 18, 28, 28, C.metal2); r(3, 19, 26, 26, C.metal); r(3, 19, 26, 2, C.metalHi);
     r(7, 24, 18, 12, C.ink); r(8, 25, 16, 10, C.screen);
@@ -313,9 +312,13 @@ export function station(t, lit) {
     r(5, 39, 4, 3, C.gold); r(23, 39, 4, 3, C.cyan); r(12, 40, 8, 2, C.metal2);
     r(0, 30, 3, 10, C.metal2); r(29, 26, 3, 14, C.metal2); r(30, 24, 2, 3, C.gold);
     r(12, 14, 8, 5, C.metal2); r(14, 12, 4, 3, C.metalHi);
-  });
-  ctx.drawImage(c, 0, 0);
-  // floating spinning orb-coin on top
+});
+export function station(t, lit) {
+  ctx.drawImage(stationBody(lit), 0, 0);
+  stationCoin(t);
+}
+// the floating, spinning orb-coin on top of the station
+export function stationCoin(t) {
   const spin = Math.abs(Math.cos(t / 400));
   const w = Math.max(1, Math.round(9 * spin)), bob = Math.round(Math.sin(t / 350) * 1.5);
   ellipse(16, 6 + bob, w, 6, C.gold2); ellipse(16, 6 + bob, Math.max(1, w - 1), 5, C.neon);

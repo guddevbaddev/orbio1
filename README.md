@@ -14,7 +14,11 @@ The look follows the concept paintings in `assets/` (also used for the title scr
 
 Scouts only look. Nothing in the game buys or sells anything.
 
-All the in-game pixel art is drawn in code (`js/art.js`); the painted concept art is only used for menus. There's no build step and no dependencies.
+All the in-game art is drawn in code (`js/art.js`) until painted sprites replace it. There's no build step and no dependencies.
+
+## Painted sprites
+
+Every picture in the game is a named slot. Drop `<slot>.png` into `assets/sprites/` and list it in `assets/sprites/manifest.json` to replace the code art for that slot. Open `sprites.html` to see every slot, its size and a template; `SPRITES.md` has the style guide, sizes and image-generator prompts; `tools/prep-sprite.sh` turns a raw generated image into a game-ready sprite.
 
 ## Play locally
 
@@ -42,6 +46,8 @@ Players then sign in with their own Orbio account at the mailbox (Sign in with O
 | `index.html`, `style.css` | Page shell, title and sleep screens, dialog boxes, HUD |
 | `assets/` | Concept paintings and the dialog banners cropped from them |
 | `js/game.js` | Map, robots, townsfolk, animals, farming, fishing, day/night lighting, save game |
-| `js/art.js` | All pixel art, drawn with code |
+| `js/art.js` | Code-drawn pixel art (the fallback for every sprite slot) |
+| `js/sprites.js` | Sprite slots, painted-PNG loading and templates |
+| `sprites.html`, `SPRITES.md`, `assets/sprite-templates/`, `tools/prep-sprite.sh` | Making painted sprites |
 | `js/orbio.js` | Sign in with Orbio, the chat gateway and tool calls, and pretend mode |
 | `piggy.html` | The Credit Silo's piggy bank: a calculator for how much Orbio credits would save you |

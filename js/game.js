@@ -1,8 +1,10 @@
 import * as Art from "./art.js";
 import * as Orbio from "./orbio.js";
+import * as Sprites from "./sprites.js";
 
 const { T, C } = Art;
-const VIEW_W = 384, VIEW_H = 224;
+const VIEW_W = 384, VIEW_H = 224; // game pixels; the canvas is 2× this for detail
+const DPR = Sprites.SCALE;
 const MAP_W = 48, MAP_H = 30;
 const GROW_MS = 25_000;          // how long a crop takes to ripen (real time)
 const REAL_MS_PER_10MIN = 7_000; // in-game clock speed
@@ -58,23 +60,35 @@ function place(e) {
   return e;
 }
 // A sprite centred on its footprint and standing on its bottom edge.
+// If a painted PNG exists for the sprite's name it's used; otherwise the code art.
 function spriteEnt(kind, tx, ty, fw, fh, w, h, sprite, extra = {}) {
   const x = tx * T + (fw * T - w) / 2, y = (ty + fh) * T - h;
-  return place({ kind, tx, ty, fw, fh, x, y, w, h, draw: (t, lit) => ctx.drawImage(sprite(lit), x, y), ...extra });
+  const e = { kind, name: kind, tx, ty, fw, fh, x, y, w, h, ...extra };
+  e.draw ||= (t, lit) => {
+    if (Sprites.drawStatic(e.name, e.tx * T + e.fw * T / 2, (e.ty + e.fh) * T, lit)) return;
+    ctx.drawImage(sprite(lit), x, y);
+    e.after?.(e, t);
+  };
+  return place(e);
 }
-const tree = (kind, tx, ty) => spriteEnt("tree", tx, ty, 1, 1, 32, 44, () => Art.treeSprite(kind));
-const bush = (kind, tx, ty) => spriteEnt("bush", tx, ty, 1, 1, 16, 16, () => Art.bushSprite(kind));
+const tree = (kind, tx, ty) => spriteEnt("tree", tx, ty, 1, 1, 32, 44, () => Art.treeSprite(kind), { name: `tree-${kind}` });
+const bush = (kind, tx, ty) => spriteEnt("bush", tx, ty, 1, 1, 16, 16, () => Art.bushSprite(kind), { name: `bush-${kind}` });
 const lamp = (tx, ty) => spriteEnt("lantern", tx, ty, 1, 1, 16, 32, (lit) => Art.lantern(lit), { lights: [[8, 6, 46]] });
 
 // buildings
 const B = {};
 B.house = spriteEnt("house", 4, 4, 7, 4, 112, 112, (lit) => Art.farmhouse(lit), {
+  name: "farmhouse",
   lights: [[21, 75, 40], [91, 75, 40], [56, 92, 34], [31, 41, 26], [81, 41, 26]],
   after: (e, t) => Art.smoke(e.x + 90, e.y + 2, t),
 });
 B.silo = spriteEnt("silo", 1, 6, 2, 2, 32, 88, () => Art.silo(), { lights: [[16, 48, 20]] });
 B.station = spriteEnt("station", 14, 6, 2, 2, 32, 48, null, {
-  draw: (t, lit) => { ctx.save(); ctx.translate(B.station.x, B.station.y); Art.station(t, lit); ctx.restore(); },
+  draw: (t, lit) => {
+    const e = B.station;
+    if (!Sprites.drawStatic("station", e.x + 16, e.y + 48, lit)) ctx.drawImage(Art.stationBody(lit), e.x, e.y);
+    ctx.save(); ctx.translate(e.x, e.y); Art.stationCoin(t); ctx.restore();
+  },
   lights: [[16, 6, 40], [16, 30, 22]],
 });
 B.barn = spriteEnt("barn", 2, 11, 5, 4, 80, 96, (lit) => Art.barn(lit), { lights: [[40, 28, 26], [40, 80, 34]] });
@@ -82,9 +96,10 @@ B.greenhouse = spriteEnt("greenhouse", 24, 11, 6, 4, 96, 88, (lit) => Art.greenh
 B.gazette = spriteEnt("gazette", 40, 4, 6, 4, 96, 104, (lit) => Art.gazette(lit), { lights: [[48, 18, 36], [19, 76, 30], [77, 76, 30], [48, 86, 30]] });
 B.fountain = spriteEnt("fountain", 38, 11, 3, 3, 48, 72, () => Art.fountain(), { after: (e, t) => Art.fountainWater(e.x, e.y, t), lights: [[24, 27, 24]] });
 const STALL_COLORS = [C.red, C.overall, C.roofGreen, C.orange];
-[[34, 11], [34, 15], [44, 12], [44, 15]].forEach(([x, y], i) => spriteEnt("stall", x, y, 2, 1, 32, 40, () => Art.stall(STALL_COLORS[i])));
+const STALL_NAMES = ["stall-red", "stall-blue", "stall-green", "stall-orange"];
+[[34, 11], [34, 15], [44, 12], [44, 15]].forEach(([x, y], i) => spriteEnt("stall", x, y, 2, 1, 32, 40, () => Art.stall(STALL_COLORS[i]), { name: STALL_NAMES[i] }));
 const mailbox = spriteEnt("mailbox", 11, 7, 1, 1, 16, 20, () => Art.mailbox(!Orbio.isSignedIn()));
-mailbox.draw = (t) => ctx.drawImage(Art.mailbox(!Orbio.isSignedIn()), mailbox.x, mailbox.y);
+mailbox.draw = (t) => { if (!Sprites.drawStatic("mailbox", mailbox.x + 8, mailbox.y + 20)) ctx.drawImage(Art.mailbox(!Orbio.isSignedIn()), mailbox.x, mailbox.y); };
 spriteEnt("board", 17, 7, 1, 1, 16, 24, () => Art.board());
 for (const [x, y] of [[8, 10], [9, 10], [1, 9]]) spriteEnt("crate", x, y, 1, 1, 16, 16, () => Art.crate());
 for (const [x, y] of [[3, 7], [12, 7], [36, 7], [33, 17]]) spriteEnt("barrel", x, y, 1, 1, 16, 18, () => Art.barrel());
@@ -94,8 +109,8 @@ for (const [x, y] of [[7, 15], [8, 15], [9, 13]]) spriteEnt("hay", x, y, 1, 1, 1
 for (const [x, y] of [[3, 9], [13, 9], [21, 9], [27, 9], [29, 7], [33, 7], [37, 10], [41, 10], [37, 15], [41, 15], [46, 9], [22, 22], [29, 22]]) lamp(x, y);
 
 // field fence (gate at x=17) with sunflowers along the east side
-const fenceH = (x, y) => place({ kind: "fence", tx: x, ty: y, draw: () => Art.fenceH(x * T, y * T) });
-const fenceV = (x, y) => place({ kind: "fence", tx: x, ty: y, draw: () => Art.fenceV(x * T, y * T) });
+const fenceH = (x, y) => place({ kind: "fence", tx: x, ty: y, draw: () => Sprites.drawStatic("fence-h", x * T + 8, (y + 1) * T) || Art.fenceH(x * T, y * T) });
+const fenceV = (x, y) => place({ kind: "fence", tx: x, ty: y, draw: () => Sprites.drawStatic("fence-v", x * T + 8, (y + 1) * T) || Art.fenceV(x * T, y * T) });
 for (let x = 12; x <= 22; x++) { if (x !== 17) fenceH(x, 11); fenceH(x, 19); }
 for (let y = 12; y <= 18; y++) { fenceV(12, y); fenceV(22, y); }
 for (const y of [12, 14, 16, 18]) spriteEnt("sunflower", 21, y, 1, 1, 16, 30, () => Art.sunflowerSprite());
@@ -154,7 +169,7 @@ let dialogOpen = false;
 
 // ================================================================ actors
 
-const orbyNpc = place({ kind: "orby", tx: 19, ty: 6, draw: (t) => Art.orby(19 * T, 6 * T, t) });
+const orbyNpc = place({ kind: "orby", tx: 19, ty: 6, draw: (t) => Sprites.drawSheet("orby", 19 * T, 6 * T, 0, Math.floor(t / 300) % 4) || Art.orby(19 * T, 6 * T, t) });
 
 // Scout robots: one walks out of the Scout Station for every crop you plant.
 const bots = [];
@@ -827,13 +842,18 @@ function cropStage(p) {
 
 // Static ground is painted once into an offscreen canvas.
 const groundLayer = document.createElement("canvas");
-groundLayer.width = MAP_W * T; groundLayer.height = MAP_H * T;
+groundLayer.width = MAP_W * T * DPR; groundLayer.height = MAP_H * T * DPR;
+const TILE_NAMES = { c: "cobble", d: "dirt", r: "cliff", b: "bridge", k: "dock", w: "water", f: "waterfall", g: "grass" };
 function paintGround() {
   const prev = Art.getContext();
-  Art.useContext(groundLayer.getContext("2d"));
+  const g2 = groundLayer.getContext("2d");
+  g2.setTransform(DPR, 0, 0, DPR, 0, 0);
+  g2.imageSmoothingEnabled = false;
+  Art.useContext(g2);
   for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
     const g = ground[y][x], px = x * T, py = y * T;
-    if (g === "c") Art.cobble(px, py, x, y);
+    if (Sprites.drawTile(TILE_NAMES[g], px, py, (x * 7919 + y * 104729) >>> 3)) { /* painted tile */ }
+    else if (g === "c") Art.cobble(px, py, x, y);
     else if (g === "d") Art.dirt(px, py, x, y);
     else if (g === "r") Art.cliff(px, py);
     else if (g === "b") Art.bridge(px, py, true, true);
@@ -859,31 +879,52 @@ const lctx = lightLayer.getContext("2d");
 
 const fireflies = Array.from({ length: 26 }, () => ({ x: rand(1, MAP_W - 1) * T, y: rand(9, MAP_H - 2) * T, ph: rand(0, 6.28) }));
 
+// Characters: painted sheet if there is one (columns: stand, step A, step B), else code art.
+function drawWalker(name, w, dir, fallback) {
+  const col = w.moving ? 1 + (w.frame || 0) : 0;
+  if (!Sprites.drawSheet(name, Math.round(w.x), Math.round(w.y), dir, col)) fallback();
+}
+function drawRobot(b, now) {
+  const name = b.hat && Sprites.has("robot-hat") ? "robot-hat" : "robot";
+  const row = b.carrying && Sprites.sheetRows(name) >= 5 ? 4 : b.dir;
+  const col = b.moving ? 1 + (Math.floor((now + (b.seed || 0) * 100) / 160) % 2) : 0;
+  if (!Sprites.drawSheet(name, Math.round(b.x), Math.round(b.y), row, col)) Art.robot(Math.round(b.x), Math.round(b.y), b.dir, now, b);
+}
+function drawAnimal(a, now) {
+  const x = Math.round(a.x), y = Math.round(a.y), flip = a.dir === 2;
+  const col = Math.floor(now / 500 + a.seed) % 2;
+  if (Sprites.drawSheet(a.kind, x, y, 0, col, flip)) return;
+  if (a.kind === "cow") Art.cow(x, y, a.dir, now); else Art.chicken(x, y, now, a.seed);
+}
+
 function draw(now) {
   const camX = Math.round(Math.max(0, Math.min(MAP_W * T - VIEW_W, player.x + 8 - VIEW_W / 2)));
   const camY = Math.round(Math.max(0, Math.min(MAP_H * T - VIEW_H, player.y + 8 - VIEW_H / 2)));
   const L = lighting();
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.imageSmoothingEnabled = false;
   ctx.save();
   ctx.translate(-camX, -camY);
-  ctx.drawImage(groundLayer, camX, camY, VIEW_W, VIEW_H, camX, camY, VIEW_W, VIEW_H);
+  ctx.drawImage(groundLayer, camX * DPR, camY * DPR, VIEW_W * DPR, VIEW_H * DPR, camX, camY, VIEW_W, VIEW_H);
 
   // animated water
   const x0 = Math.floor(camX / T), y0 = Math.floor(camY / T);
   for (let y = y0; y <= y0 + VIEW_H / T + 1; y++) for (let x = x0; x <= x0 + VIEW_W / T + 1; x++) {
     if (!inMap(x, y)) continue;
     const g = ground[y][x];
-    if (g === "w") Art.water(x * T, y * T, x, y, now);
-    else if (g === "f") Art.waterfall(x * T, y * T, now);
+    if (g === "w") { if (!Sprites.drawTile("water", x * T, y * T, Math.floor(now / 380) + x + y)) Art.water(x * T, y * T, x, y, now); }
+    else if (g === "f") { if (!Sprites.drawTile("waterfall", x * T, y * T, Math.floor(now / 110))) Art.waterfall(x * T, y * T, now); }
   }
 
   // plots and crops
   const lights = [];
   PLOTS.forEach(([x, y], i) => {
     const p = S.plots[i];
-    Art.soilPlot(x * T, y * T, !!p && p.status !== "wilted");
+    const wet = !!p && p.status !== "wilted";
+    if (!Sprites.drawTile(wet ? "soil-wet" : "soil", x * T, y * T, 0)) Art.soilPlot(x * T, y * T, wet);
     const st = cropStage(p);
     if (st >= 0) {
-      Art.crop(x * T, y * T, p.kind, st, now, L.lit);
+      if (!Sprites.drawSheet(`crop-${p.kind}`, x * T, y * T, 0, st)) Art.crop(x * T, y * T, p.kind, st, now, L.lit);
       if (st === 3) lights.push([x * T + 8, y * T + 8, 22, "rgba(120,255,200,"]);
     }
     if (p?.status === "wilted") { ctx.fillStyle = "#8a7a5a"; ctx.fillRect(x * T + 6, y * T + 8, 4, 4); }
@@ -896,15 +937,15 @@ function draw(now) {
     if (e.kind === "orby") continue;
     const ex = e.x ?? e.tx * T;
     if (ex > viewR || ex + (e.w || T) < viewL || e.baseY < viewT || e.baseY > viewB) continue;
-    list.push({ y: e.baseY, draw: () => { e.draw(now, L.lit); e.after?.(e, now); } });
+    list.push({ y: e.baseY, draw: () => e.draw(now, L.lit) });
     if (L.lit && e.lights) for (const [lx, ly, rad] of e.lights) lights.push([e.x + lx, e.y + ly, rad]);
   }
   list.push({ y: orbyNpc.baseY, draw: () => orbyNpc.draw(now) });
   if (!S.metOrby && started) list.push({ y: 9999, draw: () => Art.exclaim(19 * T, 6 * T - 2) });
-  list.push({ y: player.y + 16, draw: () => Art.person(Math.round(player.x), Math.round(player.y), S.dir, player.frame, player.moving) });
-  for (const b of [...bots, ...ambient]) list.push({ y: b.y + 16, draw: () => Art.robot(Math.round(b.x), Math.round(b.y), b.dir, now, b) });
-  for (const f of folks) list.push({ y: f.y + 16, draw: () => Art.person(Math.round(f.x), Math.round(f.y), f.dir, f.frame, f.moving, f.look) });
-  for (const a of animals) list.push({ y: a.y + 16, draw: () => (a.kind === "cow" ? Art.cow(Math.round(a.x), Math.round(a.y), a.dir, now) : Art.chicken(Math.round(a.x), Math.round(a.y), now, a.seed)) });
+  list.push({ y: player.y + 16, draw: () => drawWalker("farmer", player, S.dir, () => Art.person(Math.round(player.x), Math.round(player.y), S.dir, player.frame, player.moving)) });
+  for (const b of [...bots, ...ambient]) list.push({ y: b.y + 16, draw: () => drawRobot(b, now) });
+  folks.forEach((f, i) => list.push({ y: f.y + 16, draw: () => drawWalker(`folk-${i + 1}`, f, f.dir, () => Art.person(Math.round(f.x), Math.round(f.y), f.dir, f.frame, f.moving, f.look)) }));
+  for (const a of animals) list.push({ y: a.y + 16, draw: () => drawAnimal(a, now) });
   list.sort((a, b) => a.y - b.y);
   for (const it of list) it.draw();
 
@@ -1024,6 +1065,7 @@ function start() {
   load();
   // Robots go back to any plots that are still growing or waiting to be picked.
   S.plots.forEach((p, i) => { if (p && p.status !== "wilted") spawnScoutBot(i, true); });
+  await Sprites.loadSprites();
   paintGround();
   fit();
   requestAnimationFrame(frame);
