@@ -44,4 +44,4 @@ Players then sign in with their own Orbio account at the mailbox (Sign in with O
 | `js/game.js` | Map, robots, townsfolk, animals, farming, fishing, day/night lighting, save game |
 | `js/art.js` | All pixel art, drawn with code |
 | `js/orbio.js` | Sign in with Orbio, the chat gateway and tool calls, and pretend mode |
-| `piggy.html` | The general store's piggy bank: a calculator for how much Orbio credits would save you |
+| `piggy.html` | The Credit Silo's piggy bank: a calculator for how much Orbio credits would save you |
