@@ -382,9 +382,17 @@ if (matchMedia("(pointer: coarse)").matches) {
 // ================================================================ UI helpers
 
 let toastTimer;
-function toast(msg, ms = 2600) {
+// Menu icons: [sprite slot, emoji fallback].
+const MI = {
+  plant: ["icon-plant", "🌱"], watch: ["icon-watch", "👁"], letters: ["icon-letters", "📬"], rocket: ["icon-rocket", "🚀"],
+  kit: ["icon-kit", "📦"], fish: ["icon-fish", "🎣"], sun: ["icon-sun", "☀"], sparkle: ["icon-sparkle", "✨"], wilted: ["icon-wilted", "🥀"],
+  piggy: ["icon-piggy", "🐷"], harvests: ["icon-harvests", "🥕"], agents: ["icon-agents", "🤖"], graduate: ["icon-graduate", "🎓"], flag: ["icon-flag", "⚑"],
+};
+const mi = (k) => (MI[k] ? `${Sprites.iconHtml(...MI[k])} ` : "");
+
+function toast(msg, ms = 2600, icon = null) {
   const el = $("toast");
-  el.textContent = msg;
+  el.innerHTML = mi(icon) + esc(msg);
   el.classList.add("show");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove("show"), ms);
@@ -439,7 +447,7 @@ function openDialog({ who, html, banner, buttons = [{ label: "OK", primary: true
       const btn = document.createElement("button");
       btn.className = "btn" + (b.primary ? " primary" : "");
       if (b.primary) btn.dataset.primary = "";
-      btn.textContent = b.label;
+      btn.innerHTML = mi(b.icon) + esc(b.label);
       btn.addEventListener("click", () => { if (!b.keepOpen) closeDialog(); b.onClick?.(); });
       row.append(btn);
     }
@@ -559,7 +567,7 @@ function sleep(passedOut) {
   card.hidden = false;
   card.classList.remove("fade");
   setTimeout(() => card.classList.add("fade"), 2200);
-  setTimeout(() => { card.hidden = true; toast(`☀ Good morning! Day ${S.day}`); }, 3000);
+  setTimeout(() => { card.hidden = true; toast(`Good morning! Day ${S.day}`, 2600, "sun"); }, 3000);
 }
 
 function visitStation() {
@@ -588,7 +596,7 @@ function visitSilo() {
       <p>Spent on scouting so far: <b>${S.spent.toFixed(4)} CREDIT</b>${Orbio.isSignedIn() ? "" : " (pretend mode is free)"}.</p>
       <p>Orbio sells credits below list price, resold by people who earned them. Want to see how much it would save on your own AI bill?</p>`,
     buttons: [
-      { label: "🐷 Open the piggy bank", primary: true, onClick: () => open("piggy.html", "_blank", "noopener") },
+      { label: "Open the piggy bank", icon: "piggy", primary: true, onClick: () => open("piggy.html", "_blank", "noopener") },
       { label: "Visit orbio.so", onClick: () => open("https://www.orbio.so", "_blank", "noopener") },
       { label: "Leave" },
     ],
@@ -703,7 +711,7 @@ function renderLog() {
   liveLog.el.innerHTML = trailHtml(p.trail || [], p.current) || `<p class="hint">Deciding where to look first…</p>`;
 }
 function trailHtml(trail, current) {
-  const row = (s, now) => `<li class="${now ? "now" : ""}"><span class="ti">${TOOL_EMOJI[s.icon] || "•"}</span>${esc(s.verb)} <b>${esc(s.label)}</b>${s.note ? ` <i>· ${esc(s.note)}</i>` : now ? " <i>…</i>" : ""}</li>`;
+  const row = (s, now) => `<li class="${now ? "now" : ""}"><span class="ti">${Sprites.iconHtml(`icon-${s.icon}`, TOOL_EMOJI[s.icon] || "•")}</span>${esc(s.verb)} <b>${esc(s.label)}</b>${s.note ? ` <i>· ${esc(s.note)}</i>` : now ? " <i>…</i>" : ""}</li>`;
   const items = trail.map((s) => row(s, false));
   if (current && !trail.some((s) => s.i === current.i)) items.push(row(current, true));
   return items.length ? `<ol class="trail">${items.join("")}</ol>` : "";
@@ -745,7 +753,7 @@ function askTicker(i, kind) {
     html: `<p>Which coin should this ${seed.name} investigate?</p>
       <input type="text" maxlength="13" placeholder="$PEPE" aria-label="Coin ticker" autocomplete="off" spellcheck="false">
       <p class="hint">${Orbio.isSignedIn() ? `It can take up to ${seed.maxSteps} steps and spends ${cents(seed.budget)} from your Orbio balance.` : "Pretend mode: the robot acts out its steps with made-up results until you sign in at the mailbox."}</p>`,
-    buttons: [{ label: "🌱 Plant", primary: true, keepOpen: true, onClick: plant }, { label: "Cancel" }],
+    buttons: [{ label: "Plant", icon: "plant", primary: true, keepOpen: true, onClick: plant }, { label: "Cancel" }],
     onOpen: (d) => {
       const input = d.querySelector("input");
       // stopPropagation: the same Enter mustn't reach the game and "use" the plot again
@@ -760,7 +768,7 @@ function plantSeed(i, kind, ticker) {
   S.plots[i] = plot;
   save();
   spawnScoutBot(i);
-  toast(`🌱 Planted a ${SEEDS[kind].name} for $${ticker}. A scout robot is on its way!`);
+  toast(`Planted a ${SEEDS[kind].name} for $${ticker}. A scout robot is on its way!`, 2600, "plant");
   const onStep = (step) => {
     if (S.plots[i] !== plot) return;
     if (step.status === "start") plot.current = step;
@@ -774,7 +782,7 @@ function plantSeed(i, kind, ticker) {
       plot.status = "wilted";
       plot.error = errorText(err);
       save();
-      toast(`🥀 The $${ticker} scout wilted`);
+      toast(`The $${ticker} scout wilted`, 2600, "wilted");
     });
 }
 
@@ -804,7 +812,7 @@ function harvest(i) {
     html: cropCard(entry, true) + `<p class="hint">Your scout robot is carrying the crate home. Saved to the bulletin board (press J).</p>`,
     buttons: [
       { label: "Nice", primary: true },
-      ...(isWatched(entry.ticker) ? [] : [{ label: "👁 Watch overnight", onClick: () => watch(entry) }]),
+      ...(isWatched(entry.ticker) ? [] : [{ label: "Watch overnight", icon: "watch", onClick: () => watch(entry) }]),
     ],
   });
 }
@@ -825,12 +833,12 @@ function cropCard(e, open = false, index = null) {
       ${e.real ? "" : `<span class="pretend">pretend</span>`}</div>
     <div class="meter" title="hype ${+e.hype || 0}/100"><i style="width:${Math.max(0, Math.min(100, +e.hype || 0))}%"></i></div>
     <p>${esc(e.summary)}</p>
-    ${flags.length ? `<div class="flags">⚑ ${flags.map(esc).join(" · ")}</div>` : ""}
+    ${flags.length ? `<div class="flags">${mi("flag")}${flags.map(esc).join(" · ")}</div>` : ""}
     ${trail}
     <div class="meta">Day ${e.day} · ${esc(SEEDS[e.kind]?.name || e.kind)}${e.real ? ` · ${(+e.cost || 0).toFixed(4)} CREDIT` : ""}</div>
     ${index == null ? "" : isWatched(e.ticker)
-      ? `<button class="btn small" data-unwatch="${esc(e.ticker)}">👁 Watching overnight · stop</button>`
-      : `<button class="btn small" data-watch="${index}">👁 Watch overnight</button>`}
+      ? `<button class="btn small" data-unwatch="${esc(e.ticker)}">${mi("watch")}Watching overnight · stop</button>`
+      : `<button class="btn small" data-watch="${index}">${mi("watch")}Watch overnight</button>`}
   </div>`;
 }
 
@@ -844,7 +852,7 @@ function watch(entry) {
   if (S.watch.length >= Agents.WATCH_LIMIT) return toast(`The night shift can watch ${Agents.WATCH_LIMIT} coins. Stop watching one at the Scout Station first.`, 3600);
   S.watch.push({ ticker: entry.ticker, last: { day: entry.day, vibe: entry.vibe, hype: entry.hype, summary: entry.summary, flags: entry.flags || [] } });
   save();
-  toast(`👁 A night-shift robot will re-check $${entry.ticker} while you sleep`, 3200);
+  toast(`A night-shift robot will re-check $${entry.ticker} while you sleep`, 3200, "watch");
 }
 function unwatch(ticker) {
   S.watch = S.watch.filter((w) => w.ticker !== ticker);
@@ -881,7 +889,7 @@ function deliverLetter(bot, ticker, res, err) {
       if (res.real) refreshBalance();
     }
     save();
-    toast(`📬 The night shift left a letter about $${ticker}`, 3200);
+    toast(`The night shift left a letter about $${ticker}`, 3200, "letters");
   };
 }
 
@@ -906,7 +914,7 @@ function letterCard(m) {
     ${m.error ? "" : `<div class="meter" title="hype ${hype}/100"><i style="width:${Math.max(0, Math.min(100, +m.hype || 0))}%"></i></div>
     <div class="meta">Hype ${hype} · vibe ${esc(m.vibe)}${m.from ? ` (was ${esc(m.from.vibe)} on day ${m.from.day})` : ""}</div>`}
     <p>${esc(m.summary)}</p>
-    ${(m.flags || []).filter((f) => f && !/^none$/i.test(f)).length ? `<div class="flags">⚑ ${m.flags.map(esc).join(" · ")}</div>` : ""}
+    ${(m.flags || []).filter((f) => f && !/^none$/i.test(f)).length ? `<div class="flags">${mi("flag")}${m.flags.map(esc).join(" · ")}</div>` : ""}
     ${trailDetails(m)}
     <div class="meta">Day ${m.day} morning · night shift${m.real ? ` · ${(+m.cost || 0).toFixed(4)} CREDIT` : ""}</div>
     ${isWatched(m.ticker) ? `<button class="btn small" data-unwatch="${esc(m.ticker)}">Stop watching $${esc(m.ticker)}</button>` : ""}
@@ -956,9 +964,9 @@ function sourceNote() {
 async function openLaunchpad(tab = "agents") {
   launchDir ||= await Launchpad.loadDirectory();
   const tabs = `<div class="tabs">
-      <button class="btn" data-lp="agents" aria-pressed="${tab === "agents"}">🤖 Agents</button>
-      <button class="btn" data-lp="graduate" aria-pressed="${tab === "graduate"}">🎓 Graduate a robot</button>
-      <button class="btn" data-lp="mine" aria-pressed="${tab === "mine"}">🚀 My agent</button>
+      <button class="btn" data-lp="agents" aria-pressed="${tab === "agents"}">${mi("agents")}Agents</button>
+      <button class="btn" data-lp="graduate" aria-pressed="${tab === "graduate"}">${mi("graduate")}Graduate a robot</button>
+      <button class="btn" data-lp="mine" aria-pressed="${tab === "mine"}">${mi("rocket")}My agent</button>
     </div>`;
   let body = "";
   if (tab === "agents") {
@@ -985,7 +993,7 @@ async function openLaunchpad(tab = "agents") {
          <button class="btn small" id="linkAgent">Link agent</button><p class="hint" id="linkHint"></p>`;
   }
   const buttons = tab === "graduate"
-    ? [{ label: "Download kit", primary: true, keepOpen: true, onClick: () => downloadKit() }, { label: "Open Orbio launch form", keepOpen: true, onClick: () => open(Launchpad.LAUNCH_URL, "_blank", "noopener") }, { label: "Close" }]
+    ? [{ label: "Download kit", icon: "kit", primary: true, keepOpen: true, onClick: () => downloadKit() }, { label: "Open Orbio launch form", keepOpen: true, onClick: () => open(Launchpad.LAUNCH_URL, "_blank", "noopener") }, { label: "Close" }]
     : [{ label: "Close", primary: true }, { label: "Visit orbio.so/launchpad", onClick: () => open(Launchpad.LAUNCHPAD_URL, "_blank", "noopener") }];
   openDialog({
     who: { name: "Launchpad Tower", icon: ICONS.rocket },
@@ -1009,7 +1017,7 @@ async function openLaunchpad(tab = "agents") {
           S.myAgent = { id: a.id };
           myAgentInfo = a;
           save();
-          toast(`🚀 ${a.name} ($${a.symbol}) moved into town!`, 3200);
+          toast(`${a.name} ($${a.symbol}) moved into town!`, 3200, "rocket");
           openLaunchpad("mine");
         });
       } else {
@@ -1032,7 +1040,7 @@ function downloadKit() {
   const a = Object.assign(document.createElement("a"), { href: url, download: `${kit.token.symbol.toLowerCase()}-agent-kit.json` });
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  toast("📦 Launch kit downloaded");
+  toast("Launch kit downloaded", 2600, "kit");
 }
 
 function showAgent(a, mine) {
@@ -1051,7 +1059,7 @@ async function cast(tx, ty) {
   if (stockingPond) return toast("Orby is still stocking the lake…");
   if (S.pondDay !== S.day) {
     stockingPond = true;
-    toast("🎣 Orby is stocking the lake with today's trending coins…", 6000);
+    toast("Orby is stocking the lake with today's trending coins…", 6000, "fish");
     try {
       const res = await Orbio.scoutPond();
       S.pond = res.fish;
@@ -1118,9 +1126,9 @@ function openJournal(tab = "crops") {
   openDialog({
     who: { name: "Bulletin board", icon: ICONS.board },
     html: `<div class="tabs">
-        <button class="btn" data-tab="crops" aria-pressed="${tab === "crops"}">🥕 Harvests (${crops.length})</button>
-        <button class="btn" data-tab="fish" aria-pressed="${tab === "fish"}">🐟 Fish (${fish.length})</button>
-        <button class="btn" data-tab="mail" aria-pressed="${tab === "mail"}">📬 Letters (${mail.length})</button>
+        <button class="btn" data-tab="crops" aria-pressed="${tab === "crops"}">${mi("harvests")}Harvests (${crops.length})</button>
+        <button class="btn" data-tab="fish" aria-pressed="${tab === "fish"}">${Sprites.iconHtml("icon-fish", "🐟")} Fish (${fish.length})</button>
+        <button class="btn" data-tab="mail" aria-pressed="${tab === "mail"}">${mi("letters")}Letters (${mail.length})</button>
       </div>${list}`,
     buttons: [{ label: "Close", primary: true }],
     onOpen: (d) => {
@@ -1353,8 +1361,10 @@ function draw(now) {
     const e = inMap(fx, fy) ? owner[fy][fx] : null;
     const interesting = personAt(fx, fy) || (e && e.kind !== "tree" && e.kind !== "fence" && e.kind !== "bush" && e.kind !== "lantern") || pi >= 0 || isWater(fx, fy);
     if (interesting && Math.floor(now / 400) % 2) {
-      ctx.strokeStyle = pi >= 0 && isRipe(S.plots[pi]) ? C.gold : "rgba(255,255,255,.8)";
-      ctx.strokeRect(fx * T + 0.5, fy * T + 0.5, T - 1, T - 1);
+      if (!(Sprites.has("cursor") && Sprites.drawStatic("cursor", fx * T + 8, (fy + 1) * T))) {
+        ctx.strokeStyle = pi >= 0 && isRipe(S.plots[pi]) ? C.gold : "rgba(255,255,255,.8)";
+        ctx.strokeRect(fx * T + 0.5, fy * T + 0.5, T - 1, T - 1);
+      }
     }
   }
   ctx.restore();
@@ -1450,6 +1460,7 @@ function start() {
   // Robots go back to any plots that are still growing or waiting to be picked.
   S.plots.forEach((p, i) => { if (p && p.status !== "wilted") spawnScoutBot(i, true); });
   await Sprites.loadSprites();
+  Sprites.applySkins();
   placeDecor((await Sprites.loadWorld()).decor);
   Launchpad.loadDirectory().then((d) => {
     launchDir = d;
@@ -1474,7 +1485,7 @@ function start() {
   });
 
   const result = await Orbio.handleRedirect();
-  if (result === "signed-in") { start(); toast(`✨ Signed in with Orbio${Orbio.playerName() ? ` as @${Orbio.playerName()}` : ""}. Scouts are live!`, 4000); }
+  if (result === "signed-in") { start(); toast(`Signed in with Orbio${Orbio.playerName() ? ` as @${Orbio.playerName()}` : ""}. Scouts are live!`, 4000, "sparkle"); }
   else if (result === "cancelled") toast("Sign-in cancelled. You can still play in pretend mode.");
   else if (result === "error") toast("Sign-in didn't work. Try again from the mailbox.", 4000);
 })();

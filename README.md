@@ -29,6 +29,8 @@ Every picture in the game is a named slot. Drop `<slot>.png` into `assets/sprite
 - `assets/world.json` adds new props and buildings without code.
 - `SPRITES.md` has the style guide, sizes and image-generator prompts; `tools/prep-sprite.sh` turns a raw generated image into a game-ready sprite.
 - `SPRITE_TRACKER.md` lists every slot and whether it's painted yet, most important first. Regenerate it with `node tools/sprite-tracker.mjs`.
+- `PROMPTS.md` has a ready-to-paste image prompt for every slot (generated from `js/prompts.js` by `node tools/sprite-prompts.mjs`), with the prep command for each. `tools/make-sheet.sh` assembles character sheets from separate frames.
+- Menus are skinnable too: dialog frames, buttons, HUD panels, the title logo, menu icons and the cursor all have slots, and keep their current look until painted.
 
 ## How the scout robots work
 
@@ -77,6 +79,7 @@ Players then sign in with their own Orbio account at the mailbox (Sign in with O
 | `js/agents.js` | The scout robots: seeds, toolboxes and the tool-calling agent loop |
 | `js/launchpad.js` | Orbio launchpad directory, number formatting and the launch kit |
 | `assets/launchpad.json`, `tools/fetch-launchpad.mjs` | Launchpad snapshot and the script that refreshes it |
-| `tests/agent-loop.test.mjs`, `tests/launchpad.test.mjs` | Tests: agent loop against a simulated Orbio; launchpad module against the snapshot |
+| `tests/*.test.mjs` | Tests: agent loop against a simulated Orbio, launchpad module against the snapshot, a prompt for every sprite slot |
+| `js/prompts.js`, `PROMPTS.md`, `assets/sprite-prompts.json`, `tools/sprite-prompts.mjs` | Image prompts for every sprite slot |
 | `SPRITE_TRACKER.md`, `tools/sprite-tracker.mjs` | Which sprites still need art |
 | `piggy.html` | The Credit Silo's piggy bank: a calculator for how much Orbio credits would save you |

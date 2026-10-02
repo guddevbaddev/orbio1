@@ -115,6 +115,8 @@ function gridOf(slot, img) {
 const statics = (name, w, h, desc, code, night) => ({ name, kind: "static", w, h, desc, code, night });
 // UI pieces and portraits are static images too; they're drawn in menus and over heads.
 const ui = (name, w, h, desc, code) => ({ name, kind: "static", w, h, desc, code, cat: "ui", since: "agents" });
+// Menu skins (kind "skin"): sizes are PNG pixels; slice is the 9-slice border in PNG pixels.
+const skin = (name, w, h, slice, desc, frameKind) => ({ name, kind: "skin", pw: w, ph: h, slice, desc, cat: "menu", since: "menus", frameKind });
 const portrait = (who, desc, draw) => ({
   name: `portrait-${who}`, kind: "static", w: 48, h: 48, cat: "portrait", since: "agents", desc: `Dialog portrait: ${desc}`,
   code: () => { const c = cell(draw); const big = document.createElement("canvas"); big.width = big.height = 48; const g = big.getContext("2d"); g.imageSmoothingEnabled = false; g.drawImage(c, 0, 0, 48, 48); return big; },
@@ -194,6 +196,30 @@ export const SLOTS = [
   { ...ui("icon-letter", 16, 16, "An envelope with a red seal: a night-shift letter in the mail list.", () => cell(() => Art.letter(0, 0))), since: "night-shift" },
   ui("icon-coin", 16, 16, "Dialog icon for coins: the Credit Silo, the Meme Gazette, the Coin Cat fountain.", () => cell(() => { const g = Art.getContext(); g.fillStyle = Art.C.gold2; g.beginPath(); g.arc(8, 8, 7, 0, 7); g.fill(); g.fillStyle = Art.C.gold; g.beginPath(); g.arc(8, 8, 5, 0, 7); g.fill(); })),
 
+  // Menu icons: tabs, buttons, toasts and the robot's step list. Emoji until painted.
+  ...[["harvests", "🥕", "Harvests tab on the bulletin board: a carrot."], ["fish", "🐟", "Fish tab: a little fish."], ["letters", "📬", "Letters tab: an envelope."],
+    ["agents", "🤖", "Agents tab at the Launchpad Tower: a robot head."], ["graduate", "🎓", "Graduate-a-robot tab: a graduation cap."],
+    ["watch", "👁", "Watch overnight button: an eye."], ["plant", "🌱", "Plant button: a sprout in soil."], ["piggy", "🐷", "Piggy bank button at the Credit Silo: a piggy bank."],
+    ["kit", "📦", "Launch kit downloaded: a wooden crate with a gold label."], ["flag", "⚑", "Red flag marker in reports."], ["sun", "☀", "Good morning toast: a sun."],
+    ["sparkle", "✨", "Signed in toast: a sparkle."], ["wilted", "🥀", "Wilted crop toast: a drooping flower."],
+    ["x", "𝕏", "Robot step: reading X."], ["web", "🌐", "Robot step: searching the web (a globe)."], ["page", "📄", "Robot step: reading a page."], ["chain", "⛓️", "Robot step: checking the blockchain (chain links)."]].map(([k, emoji, what]) =>
+    ({ ...ui(`icon-${k}`, 16, 16, `Menu icon. ${what} Until painted, the menus show ${emoji}.`, () => cell(() => Art.menuIcon(k, 0, 0))), cat: "menu", since: "menus", emoji })),
+  { ...ui("cursor", 16, 16, "The highlight frame on the tile you're facing (what Space would use). Transparent middle.", () => cell(() => { const g = Art.getContext(); g.strokeStyle = "#fff"; g.strokeRect(0.5, 0.5, 15, 15); })), cat: "menu", since: "menus" },
+
+  // Menu skins: frames, buttons and panels. They restyle the HTML menus (9-slice where
+  // a slice is given: corners stay put, edges and middle stretch). Sizes are PNG pixels.
+  skin("skin-panel", 96, 96, 24, "Dialog box frame: the big wooden panel every conversation and menu opens in. Plain parchment middle.", "panel"),
+  skin("skin-card", 48, 48, 12, "Report card inside dialogs (harvests, fish, letters, agents): a clean paper card with a thin border.", "card"),
+  skin("skin-button", 48, 48, 12, "Normal button (Cancel, Close, tabs).", "button"),
+  skin("skin-button-primary", 48, 48, 12, "Main button (OK, Plant, Sleep) and the selected tab: lime green, Orbio's colour.", "button-primary"),
+  skin("skin-hud", 48, 48, 12, "Small HUD panels: the clock, the Orbio balance and pop-up toasts.", "hud"),
+  skin("skin-input", 48, 48, 12, "Text box and dropdown (ticker entry, search, launch kit form).", "input"),
+  skin("skin-seed", 48, 48, 12, "Seed choice card in the planting menu.", "seed"),
+  skin("skin-dpad", 64, 64, 16, "Phone touch controls: one arrow button of the d-pad (the arrow is drawn on top).", "dpad"),
+  skin("skin-meter", 64, 16, null, "Fill of the hype meter bar (stretched to length): a green-to-orange glowing bar.", null),
+  skin("skin-abutton", 128, 128, null, "Phone touch controls: the round A (use) button, with the letter A.", null),
+  skin("title-logo", 800, 360, null, "Title screen wordmark: \"Orbio Valley\" in chunky lime-green pixel letters, replaces the title text.", null),
+
   // Character portraits for dialog boxes (shown 40px tall in the UI).
   portrait("orby", "Orby, the lime-green orb spirit and your guide.", () => Art.orby(0, 0, 0)),
   portrait("farmer", "The player: straw hat, orange hair, blue overalls.", () => Art.person(0, 1, 0, 0, false)),
@@ -209,10 +235,43 @@ for (const s of SLOTS) {
     [s.fw, s.fh] = FOOT[s.name] || (s.name.startsWith("stall") ? [2, 1] : [1, 1]);
     s.cat ||= s.fw > 1 || s.name.startsWith("stall") ? "building" : /^(tree|bush|sunflower)/.test(s.name) ? "nature" : "prop";
   } else if (s.kind === "sheet") s.cat ||= s.name.startsWith("crop") ? "crop" : "character";
-  else s.cat = "tile";
+  else if (s.kind === "tile") s.cat = "tile";
   s.since ||= "v1";
 }
 const SLOT = Object.fromEntries(SLOTS.map((s) => [s.name, s]));
+
+// Menu skins restyle the HTML menus when their PNGs exist. One CSS rule per skin.
+const SKIN_CSS = {
+  "skin-panel": [".panel", 12],
+  "skin-card": [".card", 6],
+  "skin-button": [".btn", 6],
+  "skin-button-primary": [".btn.primary, .btn[aria-pressed=true]", 6],
+  "skin-hud": [".clock, .purse, #toast", 6],
+  "skin-input": ["#dialog input[type=text], #dialog select, .lp-controls input", 6],
+  "skin-seed": [".seed", 6],
+  "skin-dpad": [".dpad button", 8],
+};
+export function applySkins() {
+  const rules = [];
+  for (const [name, [sel, width]] of Object.entries(SKIN_CSS)) {
+    const img = images.get(name);
+    if (!img) continue;
+    const k = SLOT[name].slice;
+    rules.push(`${sel.split(",").map((x) => `body ${x.trim()}`).join(", ")} { border-style: solid; border-color: transparent; border-width: ${width}px; border-image: url("${img.src}") ${k} fill / ${width}px stretch; background: none; box-shadow: none; image-rendering: pixelated; }`);
+  }
+  if (images.get("skin-meter")) rules.push(`body .meter i { background: url("${images.get("skin-meter").src}") 0 0 / 100% 100%; image-rendering: pixelated; }`);
+  if (images.get("skin-abutton")) rules.push(`body .abtn { background: url("${images.get("skin-abutton").src}") center / contain no-repeat; border: 0; color: transparent; }`);
+  if (images.get("title-logo")) rules.push(`body #title h1 { color: transparent; text-shadow: none; background: url("${images.get("title-logo").src}") center / contain no-repeat; min-height: clamp(140px, 30vw, 260px); }`);
+  let el = document.getElementById("skin-css");
+  if (!el) { el = document.createElement("style"); el.id = "skin-css"; document.head.append(el); }
+  el.textContent = rules.join("\n");
+}
+
+// An inline menu icon: the painted PNG if there is one, else the emoji.
+export function iconHtml(name, emoji = "") {
+  const img = images.get(name);
+  return img ? `<img class="mi" src="${img.src}" alt="">` : emoji;
+}
 
 // A canvas for menus and dialogs: the painted PNG, else a block (blocks view), else code art.
 export function uiImage(name, size = 16) {
@@ -244,7 +303,7 @@ export async function loadWorld() {
     if (!d.name || SLOT[d.name]) continue;
     const [pw, ph] = d.size || [(d.w || 1) * 32, (d.h || 1) * 32];
     const slot = { name: d.name, kind: "static", w: pw / SCALE, h: ph / SCALE, fw: d.w || 1, fh: d.h || 1, cat: d.category || "prop",
-      desc: `${d.title || d.name} (from assets/world.json). Footprint ${d.w || 1}×${d.h || 1} tiles at (${d.x}, ${d.y}).`, custom: true };
+      desc: `${d.title || d.name} (from assets/world.json). Footprint ${d.w || 1}×${d.h || 1} tiles at (${d.x}, ${d.y}).`, custom: true, prompt: d.prompt, since: "world.json" };
     SLOTS.push(slot);
     SLOT[d.name] = slot;
   }
@@ -272,7 +331,21 @@ function upscale(src) {
   return c;
 }
 
+function skinReference(slot) {
+  const c = document.createElement("canvas");
+  c.width = slot.pw; c.height = slot.ph;
+  const g = c.getContext("2d");
+  const prev = Art.getContext(); Art.useContext(g);
+  if (slot.frameKind) Art.frame(slot.pw, slot.ph, slot.frameKind);
+  else if (slot.name === "skin-meter") { const gr = g.createLinearGradient(0, 0, slot.pw, 0); gr.addColorStop(0, Art.C.neon); gr.addColorStop(1, "#ff8a5a"); g.fillStyle = gr; g.fillRect(0, 0, slot.pw, slot.ph); }
+  else if (slot.name === "skin-abutton") { g.fillStyle = Art.C.woodDark; g.beginPath(); g.arc(64, 64, 62, 0, 7); g.fill(); g.fillStyle = Art.C.neon; g.beginPath(); g.arc(64, 64, 56, 0, 7); g.fill(); g.fillStyle = Art.C.ink; g.font = "bold 64px monospace"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("A", 64, 68); }
+  else if (slot.name === "title-logo") { g.font = "bold 150px sans-serif"; g.textAlign = "center"; g.fillStyle = "#55331b"; g.fillText("Orbio", 404, 160); g.fillText("Valley", 404, 320); g.fillStyle = Art.C.neon; g.fillText("Orbio", 400, 150); g.fillText("Valley", 400, 310); }
+  Art.useContext(prev);
+  return c;
+}
+
 export function template(slot, lit = false) {
+  if (slot.kind === "skin") return skinReference(slot);
   if (slot.kind === "static") return upscale(slot.code(lit));
   if (slot.kind === "tile") return upscale(cell(() => { for (let i = 0; i < slot.n; i++) slot.code(i * 16, 0, i); }, slot.n * 16, 16));
   const cw = slot.cellW / SCALE, ch = slot.cellH / SCALE;
@@ -296,7 +369,29 @@ export function template(slot, lit = false) {
 
 // Block guide: the template block at the PNG size, with the tile grid, footprint and
 // anchor marked, and each sheet cell labelled with its direction and frame.
+function skinGuide(slot) {
+  const c = document.createElement("canvas");
+  c.width = slot.pw; c.height = slot.ph;
+  const g = c.getContext("2d");
+  g.fillStyle = "rgba(201,138,216,.35)"; g.fillRect(0, 0, c.width, c.height);
+  g.strokeStyle = "#24160f"; g.strokeRect(0.5, 0.5, c.width - 1, c.height - 1);
+  if (slot.slice) {
+    const k = slot.slice;
+    g.fillStyle = "rgba(201,138,216,.6)";
+    for (const [x, y] of [[0, 0], [c.width - k, 0], [0, c.height - k], [c.width - k, c.height - k]]) g.fillRect(x, y, k, k);
+    g.setLineDash([3, 3]); g.strokeStyle = "#7a3d8a";
+    for (const x of [k, c.width - k]) { g.beginPath(); g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, c.height); g.stroke(); }
+    for (const y of [k, c.height - k]) { g.beginPath(); g.moveTo(0, y + 0.5); g.lineTo(c.width, y + 0.5); g.stroke(); }
+  }
+  const prev = Art.getContext(); Art.useContext(g);
+  const label = slot.name.replace(/^skin-/, "").toUpperCase().slice(0, Math.floor((c.width - 4) / 4));
+  Art.tinyText(label, Math.max(2, Math.round(c.width / 2 - label.length * 2)), Math.round(c.height / 2 - 2), "#24160f");
+  Art.useContext(prev);
+  return c;
+}
+
 export function blockTemplate(slot) {
+  if (slot.kind === "skin") return skinGuide(slot);
   const prevMode = mode;
   mode = "blocks";
   let c;
@@ -333,6 +428,7 @@ export function blockTemplate(slot) {
 }
 
 export function sizeLabel(slot) {
+  if (slot.kind === "skin") return `${slot.pw}×${slot.ph}${slot.slice ? ` (9-slice, ${slot.slice}px corners)` : ""}`;
   if (slot.kind === "static") return `${slot.w * SCALE}×${slot.h * SCALE}`;
   if (slot.kind === "tile") return `32×32 per cell (template has ${slot.n})`;
   return `${slot.cellW}×${slot.cellH} per cell, ${slot.cols} cols × ${slot.rows} rows = ${slot.cellW * slot.cols}×${slot.cellH * slot.rows}`;

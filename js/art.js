@@ -557,13 +557,57 @@ export function bubble(x, y, icon, t) {
   r(x + 2, y + 1, 12, 11, C.white); r(x + 3, y + 2, 10, 9, C.white);
   r(x + 6, y + 13, 4, 1, C.ink); r(x + 7, y + 14, 2, 1, C.ink); r(x + 7, y + 12, 2, 2, C.white);
   const ph = Math.floor(t / 250) % 3;
+  if (["x", "web", "page", "chain"].includes(icon)) glyph(icon, x, y);
+  else if (icon === "mail") { r(x + 3, y + 3, 10, 7, C.plaster); r(x + 3, y + 3, 10, 1, C.ink); r(x + 3, y + 9, 10, 1, C.ink); r(x + 3, y + 3, 1, 7, C.ink); r(x + 12, y + 3, 1, 7, C.ink); for (let i = 0; i < 4; i++) { p(x + 4 + i, y + 4 + i, C.ink); p(x + 11 - i, y + 4 + i, C.ink); } r(x + 7, y + 7, 2, 2, C.red); }
+  else if (icon === "done") { for (let i = 0; i < 3; i++) p(x + 4 + i, y + 6 + i, C.leaf); for (let i = 0; i < 5; i++) p(x + 7 + i, y + 8 - i, C.leaf); }
+  else for (let i = 0; i < 3; i++) r(x + 4 + i * 3, y + 6 - (i === ph ? 1 : 0), 2, 2, C.ink);
+}
+
+// Small 16×16 menu icons (tabs, buttons, toasts). Each is a sprite slot; this is the
+// code-drawn fallback and template reference.
+export function menuIcon(kind, x, y) {
+  switch (kind) {
+    case "harvests": // carrot
+      r(x + 6, y + 1, 2, 4, C.leaf); r(x + 9, y + 1, 2, 4, C.leafHi); r(x + 5, y + 5, 7, 4, C.orange); r(x + 6, y + 9, 5, 3, C.orange); r(x + 7, y + 12, 3, 2, C.orange); r(x + 8, y + 14, 1, 1, C.orange); r(x + 6, y + 6, 1, 3, "#ffb066"); break;
+    case "fish": fishSprite(x, y, C.sky); break;
+    case "letters": letter(x, y); break;
+    case "agents": robot(x, y + 1, 0, 1000, {}); break;
+    case "graduate": // mortarboard
+      r(x + 1, y + 5, 14, 3, C.ink); r(x + 3, y + 4, 10, 1, C.ink); r(x + 4, y + 8, 8, 4, C.slate); r(x + 13, y + 7, 1, 5, C.gold); r(x + 12, y + 11, 3, 2, C.gold); break;
+    case "watch": // eye
+      ellipse(x + 8, y + 8, 7, 4, C.ink); ellipse(x + 8, y + 8, 6, 3, C.white); ellipse(x + 8, y + 8, 3, 3, C.overall); r(x + 7, y + 7, 2, 2, C.ink); r(x + 9, y + 6, 1, 1, C.white); break;
+    case "plant": // sprout in soil
+      r(x + 2, y + 11, 12, 4, C.soil); r(x + 2, y + 11, 12, 1, "#8a5a36"); r(x + 7, y + 6, 2, 5, C.leaf2); ellipse(x + 5, y + 6, 3, 2, C.leaf2); ellipse(x + 11, y + 5, 3, 2, C.leafHi); break;
+    case "piggy":
+      ellipse(x + 8, y + 9, 6, 5, C.pink); r(x + 4, y + 3, 2, 3, C.pink); ellipse(x + 13, y + 9, 2, 2, "#f07ab0"); r(x + 9, y + 6, 1, 1, C.ink); r(x + 5, y + 13, 2, 2, C.pink); r(x + 10, y + 13, 2, 2, C.pink); r(x + 6, y + 4, 4, 1, C.gold); break;
+    case "kit": r(x + 2, y + 5, 12, 9, C.wood); r(x + 2, y + 5, 12, 2, C.woodHi); r(x + 7, y + 5, 2, 9, C.wood2); r(x + 2, y + 13, 12, 1, C.woodDark); r(x + 5, y + 2, 6, 3, C.gold); break;
+    case "flag": r(x + 4, y + 2, 1, 12, C.ink); r(x + 5, y + 2, 7, 5, C.red); r(x + 5, y + 7, 4, 1, C.red); break;
+    case "sun": ellipse(x + 8, y + 8, 4, 4, C.gold); for (const [dx, dy] of [[0, -7], [0, 6], [-7, 0], [6, 0], [-5, -5], [4, -5], [-5, 4], [4, 4]]) r(x + 8 + dx, y + 8 + dy, 2, 2, C.gold2); break;
+    case "sparkle": r(x + 7, y + 1, 2, 14, C.goldHi); r(x + 1, y + 7, 14, 2, C.goldHi); r(x + 6, y + 6, 4, 4, C.white); r(x + 12, y + 2, 2, 2, C.gold); r(x + 2, y + 12, 2, 2, C.gold); break;
+    case "wilted": r(x + 7, y + 6, 2, 8, C.leaf3); ellipse(x + 5, y + 6, 3, 2, "#a0522d"); r(x + 10, y + 9, 3, 2, C.leaf3); r(x + 3, y + 7, 2, 2, "#8a7a5a"); break;
+    case "x": case "web": case "page": case "chain": glyph(kind, x, y); break;
+    default: r(x + 4, y + 4, 8, 8, C.neon);
+  }
+}
+// The pictures inside thought bubbles, also used as menu icons for the robot's steps.
+export function glyph(icon, x, y) {
   if (icon === "x") { for (let i = 0; i < 7; i++) { p(x + 4 + i, y + 3 + i, C.ink); p(x + 10 - i, y + 3 + i, C.ink); } }
   else if (icon === "web") { ellipse(x + 8, y + 6, 4, 4, C.overall); r(x + 4, y + 6, 9, 1, C.sky); r(x + 8, y + 2, 1, 9, C.sky); }
   else if (icon === "page") { r(x + 5, y + 2, 6, 9, C.plaster2); for (let i = 0; i < 3; i++) r(x + 6, y + 4 + i * 2, 4, 1, C.ink); }
   else if (icon === "chain") { r(x + 4, y + 4, 4, 3, C.gold2); r(x + 8, y + 6, 4, 3, C.gold2); r(x + 5, y + 5, 2, 1, C.white); r(x + 9, y + 7, 2, 1, C.white); }
-  else if (icon === "mail") { r(x + 3, y + 3, 10, 7, C.plaster); r(x + 3, y + 3, 10, 1, C.ink); r(x + 3, y + 9, 10, 1, C.ink); r(x + 3, y + 3, 1, 7, C.ink); r(x + 12, y + 3, 1, 7, C.ink); for (let i = 0; i < 4; i++) { p(x + 4 + i, y + 4 + i, C.ink); p(x + 11 - i, y + 4 + i, C.ink); } r(x + 7, y + 7, 2, 2, C.red); }
-  else if (icon === "done") { for (let i = 0; i < 3; i++) p(x + 4 + i, y + 6 + i, C.leaf); for (let i = 0; i < 5; i++) p(x + 7 + i, y + 8 - i, C.leaf); }
-  else for (let i = 0; i < 3; i++) r(x + 4 + i * 3, y + 6 - (i === ph ? 1 : 0), 2, 2, C.ink);
+}
+
+// The current CSS look of menu frames, drawn for template references.
+export function frame(w, h, kind) {
+  const look = {
+    panel: [C.woodDark, C.wood, "#f6e2b3", "#fff3d6", 4], card: [C.woodDark, C.woodDark, "#ffffff", "#ffffff", 3],
+    button: [C.woodDark, C.woodDark, "#f6e2b3", "#f6e2b3", 3], "button-primary": [C.woodDark, C.woodDark, C.neon, C.neon, 3],
+    hud: [C.woodDark, C.woodDark, "#fff3d6", "#fff3d6", 3], input: [C.woodDark, C.woodDark, "#ffffff", "#ffffff", 3],
+    seed: [C.woodDark, C.woodDark, "#f6e2b3", "#f6e2b3", 3], dpad: [C.woodDark, C.woodDark, "#fff3d6", "#fff3d6", 3],
+  }[kind] || [C.woodDark, C.wood, "#f6e2b3", "#fff3d6", 4];
+  const [outer, inner, inner2, fill, b] = look;
+  r(0, 0, w, h, outer); r(b, b, w - b * 2, h - b * 2, inner); r(b + 2, b + 2, w - b * 2 - 4, h - b * 2 - 4, inner2); r(b + 3, b + 3, w - b * 2 - 6, h - b * 2 - 6, fill);
+  if (kind === "button" || kind === "button-primary" || kind === "dpad") r(0, h - 3, w, 3, C.woodDark);
 }
 
 // A little rocket: the launchpad's icon.
