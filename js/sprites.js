@@ -145,7 +145,8 @@ export const SLOTS = [
   statics("barrel", 16, 18, "Wooden barrel.", () => Art.barrel()),
   statics("hay", 16, 14, "Hay bale.", () => Art.hay()),
   statics("board", 16, 24, "Bulletin board on two posts.", () => Art.board()),
-  statics("mailbox", 16, 20, "Blue mailbox on a post.", () => Art.mailbox(true)),
+  statics("mailbox", 16, 20, "Blue mailbox on a post, flag down (no mail).", () => Art.mailbox(false)),
+  { ...statics("mailbox-flag", 16, 20, "The same mailbox with its red flag up: a letter from the night shift is waiting.", () => Art.mailbox(true)), since: "night-shift" },
   statics("fence-h", 16, 16, "Horizontal fence section (one tile, tiles left-right).", () => cell((g) => Art.fenceH(0, 0))),
   statics("fence-v", 16, 16, "Vertical fence section (one tile, tiles top-bottom).", () => cell((g) => Art.fenceV(0, 0))),
 
@@ -163,6 +164,7 @@ export const SLOTS = [
   { name: "farmer", kind: "sheet", cols: 3, rows: 4, cellW: 32, cellH: 40, desc: "The player. Columns: standing, step A, step B. Rows: facing down, up, left, right.", code: (d, f) => Art.person(0, 4, d, f ? f - 1 : 0, f > 0) },
   { name: "robot", kind: "sheet", cols: 3, rows: 5, cellW: 32, cellH: 40, desc: "Scout robot (white body, dark visor, cyan eyes, leaf sprout). Rows: down, up, left, right, and a 5th row carrying a crate of veg.", code: (d, f, t) => Art.robot(0, 4, d === 4 ? 0 : d, 400 + f * 180, { moving: f > 0, carrying: d === 4 }) },
   { name: "robot-hat", kind: "sheet", cols: 3, rows: 5, cellW: 32, cellH: 40, desc: "Farmhand robot wearing a straw hat. Same layout as robot.", code: (d, f) => Art.robot(0, 4, d === 4 ? 0 : d, 400 + f * 180, { moving: f > 0, carrying: d === 4, hat: true }) },
+  { name: "robot-night", kind: "sheet", cols: 3, rows: 4, cellW: 32, cellH: 40, since: "night-shift", desc: "Night-shift robot: the scout robot in a blue nightcap. Same layout as robot (no carrying row).", code: (d, f) => Art.robot(0, 4, d, 400 + f * 180, { moving: f > 0, nightcap: true }) },
   ...[1, 2, 3, 4].map((i) => ({ name: `folk-${i}`, kind: "sheet", cols: 3, rows: 4, cellW: 32, cellH: 40, desc: `Townsperson #${i}. Same layout as farmer.`, folk: i - 1 })),
   { name: "cow", kind: "sheet", cols: 2, rows: 1, cellW: 48, cellH: 36, desc: "Cow facing right (flipped for left). Two idle/walk frames.", code: (d, f) => Art.cow(2, 2, 3, f * 400) },
   { name: "chicken", kind: "sheet", cols: 2, rows: 1, cellW: 32, cellH: 32, desc: "Chicken facing right. Frame 2 is pecking.", code: (d, f) => Art.chicken(0, 0, f ? 0 : 400, 0) },
@@ -173,8 +175,8 @@ export const SLOTS = [
   { name: "station-coin", kind: "sheet", cols: 4, rows: 1, cellW: 32, cellH: 32, cat: "ui", since: "agents", desc: "The orb-coin floating and spinning above the Scout Station. Four frames: face-on, turning, edge-on, turning back.", code: (d, f) => { const g = Art.getContext(); g.save(); g.translate(-8, 3); Art.stationCoin(f * 314); g.restore(); } },
 
   // Thought bubbles: what a working robot is doing right now (drawn above its head).
-  ...[["x", "reading X"], ["web", "searching the web"], ["page", "reading a web page"], ["chain", "checking the blockchain"], ["think", "thinking (between steps)"], ["done", "finished, ready to harvest"]].map(([k, what]) =>
-    ui(`bubble-${k}`, 16, 16, `Robot thought bubble: ${what}. The tail points down at the robot's head.`, () => cell(() => Art.bubble(0, 0, k, 0)))),
+  ...[["x", "reading X"], ["web", "searching the web"], ["page", "reading a web page"], ["chain", "checking the blockchain"], ["think", "thinking (between steps)"], ["done", "finished, ready to harvest"], ["mail", "delivering a night-shift letter"]].map(([k, what]) =>
+    ({ ...ui(`bubble-${k}`, 16, 16, `Robot thought bubble: ${what}. The tail points down at the robot's head.`, () => cell(() => Art.bubble(0, 0, k, 0))), ...(k === "mail" ? { since: "night-shift" } : {}) })),
   // Seed packets in the planting menu.
   ...[["chatter", "Chatter Carrot (orange)"], ["rumor", "Rumor Radish (pink-red)"], ["deep", "Deep Root Daikon (white)"]].map(([k, what]) =>
     ui(`seed-${k}`, 16, 16, `Seed packet for ${what}, shown in the planting menu.`, () => cell(() => Art.seedPacket(0, 0, k)))),
@@ -185,6 +187,7 @@ export const SLOTS = [
   ui("exclaim", 16, 16, "The ! that pops up when a fish bites (and over Orby before you meet).", () => cell(() => Art.exclaim(0, 11))),
   ui("icon-mailbox", 16, 16, "Dialog icon for the mailbox (Sign in with Orbio).", () => cell(() => Art.getContext().drawImage(Art.mailbox(true), 0, -3))),
   ui("icon-board", 16, 16, "Dialog icon for the bulletin board (journal).", () => cell(() => Art.getContext().drawImage(Art.board(), 0, -6))),
+  { ...ui("icon-letter", 16, 16, "An envelope with a red seal: a night-shift letter in the mail list.", () => cell(() => Art.letter(0, 0))), since: "night-shift" },
   ui("icon-coin", 16, 16, "Dialog icon for coins: the Credit Silo, the Meme Gazette, the Coin Cat fountain.", () => cell(() => { const g = Art.getContext(); g.fillStyle = Art.C.gold2; g.beginPath(); g.arc(8, 8, 7, 0, 7); g.fill(); g.fillStyle = Art.C.gold; g.beginPath(); g.arc(8, 8, 5, 0, 7); g.fill(); })),
 
   // Character portraits for dialog boxes (shown 40px tall in the UI).

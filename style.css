@@ -101,6 +101,10 @@ a { color: inherit; }
 .trail li i { opacity: .65; }
 .trail li.now { animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .55; } }
+.btn.small { font-size: 18px; padding: 2px 10px; margin-top: 6px; }
+.change { border: 2px solid var(--ink); border-radius: 999px; padding: 0 8px; font-size: 18px; background: #dcd6c8; }
+.change.up { background: #b8f08a; } .change.down { background: #ffb3a3; }
+.card.letter.unread { box-shadow: 0 0 0 3px var(--neon); }
 .how summary { cursor: pointer; font-size: 18px; margin-top: 4px; }
 .log { background: #fff; border: 3px solid var(--wood-dark); border-radius: 6px; padding: 4px 10px; min-height: 40px; }
 

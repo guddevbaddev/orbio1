@@ -100,7 +100,13 @@ const STALL_COLORS = [C.red, C.overall, C.roofGreen, C.orange];
 const STALL_NAMES = ["stall-red", "stall-blue", "stall-green", "stall-orange"];
 [[34, 11], [34, 15], [44, 12], [44, 15]].forEach(([x, y], i) => spriteEnt("stall", x, y, 2, 1, 32, 40, () => Art.stall(STALL_COLORS[i]), { name: STALL_NAMES[i] }));
 const mailbox = spriteEnt("mailbox", 11, 7, 1, 1, 16, 20, () => Art.mailbox(!Orbio.isSignedIn()));
-mailbox.draw = (t) => { if (!Sprites.drawStatic("mailbox", mailbox.x + 8, mailbox.y + 20)) ctx.drawImage(Art.mailbox(!Orbio.isSignedIn()), mailbox.x, mailbox.y); };
+// The flag goes up when the night shift has left a letter.
+mailbox.draw = (t) => {
+  const flag = unreadMail() > 0;
+  const name = flag && (Sprites.has("mailbox-flag") || Sprites.blocksMode()) ? "mailbox-flag" : "mailbox";
+  if (!Sprites.drawStatic(name, mailbox.x + 8, mailbox.y + 20)) ctx.drawImage(Art.mailbox(flag), mailbox.x, mailbox.y);
+};
+const unreadMail = () => (S.mail || []).filter((m) => !m.read).length;
 spriteEnt("board", 17, 7, 1, 1, 16, 24, () => Art.board());
 for (const [x, y] of [[8, 10], [9, 10], [1, 9]]) spriteEnt("crate", x, y, 1, 1, 16, 16, () => Art.crate());
 for (const [x, y] of [[3, 7], [12, 7], [36, 7], [33, 17]]) spriteEnt("barrel", x, y, 1, 1, 16, 18, () => Art.barrel());
@@ -163,6 +169,7 @@ function solidTile(x, y) {
 const fresh = () => ({
   day: 1, minutes: 0, plots: PLOTS.map(() => null), journal: [], fishLog: [],
   pond: [], pondDay: 0, spent: 0, px: 7 * T, py: 8 * T, dir: 0, metOrby: false,
+  watch: [], mail: [], // coins the night shift re-checks, and the letters it leaves
 });
 let S = fresh();
 
@@ -234,12 +241,19 @@ function updateBots(dt) {
     b.moving = stepAlongPath(b, dt, 0.045);
     if (!b.moving) {
       if (b.state === "walk") b.state = "work";
-      if (b.state === "home") b.gone = true;
-      if (b.state === "work") b.dir = 0;
+      else if (b.state === "home") b.gone = true;
+      else if (b.state === "deliver") {
+        // a night-shift robot reached the mailbox: post the letter, then head home
+        b.onArrive?.();
+        b.state = "home";
+        b.dir = 1;
+        b.path = [[14 * T + 8, 8 * T], [14 * T + 8, 7 * T + 8]];
+      }
+      if (b.state === "work" || b.state === "night") b.dir = 0;
     }
     const p = b.plot != null ? S.plots[b.plot] : null;
-    b.busy = b.state === "work" && p && !isRipe(p);
-    b.carrying = b.state === "home" || (b.state === "work" && isRipe(p));
+    b.busy = (b.state === "work" && p && !isRipe(p)) || b.state === "night";
+    b.carrying = !b.night && (b.state === "home" || (b.state === "work" && isRipe(p)));
   }
   for (let i = bots.length - 1; i >= 0; i--) if (bots[i].gone) bots.splice(i, 1);
   for (const a of ambient) {
@@ -359,6 +373,7 @@ const ICONS = {
   deep: () => Sprites.uiImage("seed-deep"),
   fish: (rarity) => () => Sprites.uiImage(`fish-${rarity}`),
   mail: () => Sprites.uiImage("icon-mailbox"),
+  letter: () => Sprites.uiImage("icon-letter"),
   board: () => Sprites.uiImage("icon-board"),
   coin: () => Sprites.uiImage("icon-coin"),
 };
@@ -451,6 +466,7 @@ const TIPS = [
   "Welcome to Orbio Valley! I'm Orby. Every crop on this farm is grown by a little AI scout robot that reads the internet about a meme coin.",
   "Head into the fenced field and press <b>Space</b> (or <b>A</b>) on an empty patch of soil. Pick a seed, give it a ticker like <b>$PEPE</b>, and a robot will tend it.",
   "Each robot is a little AI agent: it decides for itself what to read next. <b>Chatter Carrots</b> dig through X, <b>Rumor Radishes</b> search and read the web, and <b>Deep Root Daikons</b> do both and check the blockchain too. Walk up to a growing crop to see what its robot is doing.",
+  "Like a coin you harvested? Press <b>Watch overnight</b> on its report. While you sleep a night-shift robot re-checks it, and in the morning it leaves a letter in the mailbox saying what changed.",
   "Walk down to the lake dock and cast a line to catch whatever coins are trending today. Rarer fish means more hype. The lake restocks every morning.",
   "Everything runs on <b>Orbio</b>: one balance pays for the AI model <i>and</i> the X and web reads. Check the mailbox to sign in, and the silo to see your spending.",
   "Over the bridge is town. Folks there love to gossip about coins. Remember: scouts only look. Hype isn't value, and lots of these coins are rugs!",
@@ -494,9 +510,11 @@ function sleep(passedOut) {
   S.minutes = 0;
   S.px = 7 * T; S.py = 8 * T; S.dir = 0;
   save();
+  const out = startNightShift();
   const card = $("sleepCard");
   $("sleepDay").textContent = `Day ${S.day}`;
-  $("sleepMsg").textContent = passedOut ? "You stayed out too late and passed out… the robots carried you home." : "The robots kept watch over the farm all night.";
+  $("sleepMsg").textContent = (passedOut ? "You stayed out too late and passed out… the robots carried you home. " : "")
+    + (out ? `${out} robot${out === 1 ? "" : "s"} went out on the night shift. Their letters will be in the mailbox this morning.` : "The robots kept watch over the farm all night.");
   card.hidden = false;
   card.classList.remove("fade");
   setTimeout(() => card.classList.add("fade"), 2200);
@@ -513,7 +531,12 @@ function visitStation() {
     banner: "assets/banner-station.webp",
     who: { name: "Scout Station", icon: ICONS.robot },
     html: `<p>Your scout robots charge here. Each one is an AI agent with a toolbox (reading X, searching and reading the web, checking the blockchain), a step limit and a spending cap. It chooses its own steps, then grows what it learned into a crop.</p>
-      ${lines.length ? `<p>Out in the field right now:</p><ul class="trail">${lines.join("")}</ul>` : `<p class="hint">No robots out right now. Plant a seed in the field to send one.</p>`}`,
+      ${lines.length ? `<p>Out in the field right now:</p><ul class="trail">${lines.join("")}</ul>` : `<p class="hint">No robots out right now. Plant a seed in the field to send one.</p>`}
+      <p><b>Night shift</b> (${S.watch.length}/${Agents.WATCH_LIMIT}): ${S.watch.length
+        ? `while you sleep, a robot re-checks ${S.watch.map((w) => `<b>$${esc(w.ticker)}</b>`).join(", ")} (${Agents.NIGHT.maxSteps} steps, up to ${Math.round(Agents.NIGHT.budget * 100 * 10) / 10}¢ each) and leaves a letter in the mailbox.`
+        : "watch a coin from a harvest report and a robot re-checks it every night."}</p>
+      ${S.watch.map((w) => `<button class="btn small" data-unwatch="${esc(w.ticker)}">Stop watching $${esc(w.ticker)}</button>`).join(" ")}`,
+    onOpen: (d) => hookCardButtons(d, visitStation),
   });
 }
 
@@ -559,6 +582,11 @@ function visitGazette() {
 // --- mailbox: Sign in with Orbio
 
 function openMailbox() {
+  if (S.mail.length) return openMail();
+  openAccount();
+}
+
+function openAccount() {
   const who = { name: "Mailbox", icon: ICONS.mail };
   if (!Orbio.isConfigured()) {
     return openDialog({
@@ -593,7 +621,7 @@ async function refreshBalance() {
   } catch { el.textContent = "Signed in"; }
 }
 Orbio.onAuthChange(refreshBalance);
-$("purse").addEventListener("click", () => started && !dialogOpen && openMailbox());
+$("purse").addEventListener("click", () => started && !dialogOpen && openAccount());
 
 // --- farming
 
@@ -733,18 +761,24 @@ function harvest(i) {
   openDialog({
     who: { name: `${SEEDS[p.kind].name} harvested!`, icon: ICONS[p.kind] },
     html: cropCard(entry, true) + `<p class="hint">Your scout robot is carrying the crate home. Saved to the bulletin board (press J).</p>`,
-    buttons: [{ label: "Nice", primary: true }],
+    buttons: [
+      { label: "Nice", primary: true },
+      ...(isWatched(entry.ticker) ? [] : [{ label: "👁 Watch overnight", onClick: () => watch(entry) }]),
+    ],
   });
 }
 
-function cropCard(e, open = false) {
-  const flags = (e.flags || []).filter((f) => f && !/^none$/i.test(f));
+function trailDetails(e, open = false) {
+  if (!e.trail?.length) return "";
   const sources = (e.sources || []).map((src) => /^https?:\/\//.test(src)
     ? `<a href="${esc(src)}" target="_blank" rel="noopener">${esc(src.replace(/^https?:\/\/(www\.)?/, "").slice(0, 40))}</a>`
     : esc(src));
-  const trail = e.trail?.length
-    ? `<details class="how"${open ? " open" : ""}><summary>How the robot investigated (${e.trail.length} step${e.trail.length === 1 ? "" : "s"})</summary>${trailHtml(e.trail)}${sources.length ? `<div class="meta">Sources: ${sources.join(" · ")}</div>` : ""}</details>`
-    : "";
+  return `<details class="how"${open ? " open" : ""}><summary>How the robot investigated (${e.trail.length} step${e.trail.length === 1 ? "" : "s"})</summary>${trailHtml(e.trail)}${sources.length ? `<div class="meta">Sources: ${sources.join(" · ")}</div>` : ""}</details>`;
+}
+
+function cropCard(e, open = false, index = null) {
+  const flags = (e.flags || []).filter((f) => f && !/^none$/i.test(f));
+  const trail = trailDetails(e, open);
   return `<div class="card">
     <div class="head"><span class="ticker">$${esc(e.ticker)}</span><span class="vibe ${esc(e.vibe)}">${esc(e.vibe)}</span>
       ${e.real ? "" : `<span class="pretend">pretend</span>`}</div>
@@ -753,7 +787,95 @@ function cropCard(e, open = false) {
     ${flags.length ? `<div class="flags">⚑ ${flags.map(esc).join(" · ")}</div>` : ""}
     ${trail}
     <div class="meta">Day ${e.day} · ${esc(SEEDS[e.kind]?.name || e.kind)}${e.real ? ` · ${(+e.cost || 0).toFixed(4)} CREDIT` : ""}</div>
+    ${index == null ? "" : isWatched(e.ticker)
+      ? `<button class="btn small" data-unwatch="${esc(e.ticker)}">👁 Watching overnight · stop</button>`
+      : `<button class="btn small" data-watch="${index}">👁 Watch overnight</button>`}
   </div>`;
+}
+
+// --- the night shift
+// Coins you choose to watch get re-checked every night by a night-shift robot. In the
+// morning it walks to the mailbox and leaves a "what changed" letter.
+
+const isWatched = (ticker) => S.watch.some((w) => w.ticker === ticker);
+function watch(entry) {
+  if (isWatched(entry.ticker)) return toast(`Already watching $${entry.ticker}`);
+  if (S.watch.length >= Agents.WATCH_LIMIT) return toast(`The night shift can watch ${Agents.WATCH_LIMIT} coins. Stop watching one at the Scout Station first.`, 3600);
+  S.watch.push({ ticker: entry.ticker, last: { day: entry.day, vibe: entry.vibe, hype: entry.hype, summary: entry.summary, flags: entry.flags || [] } });
+  save();
+  toast(`👁 A night-shift robot will re-check $${entry.ticker} while you sleep`, 3200);
+}
+function unwatch(ticker) {
+  S.watch = S.watch.filter((w) => w.ticker !== ticker);
+  save();
+  toast(`Stopped watching $${ticker}`);
+}
+
+function startNightShift() {
+  S.watch.forEach((w, i) => {
+    const bot = { night: true, nightcap: true, ticker: w.ticker, x: (12 + i * 1.5) * T, y: 8 * T + 6, path: [], dir: 0, seed: i * 3 + 1, state: "night", current: null };
+    bots.push(bot);
+    const snapshot = { ...w.last };
+    Agents.runNightCheck(w.ticker, snapshot, (step) => { bot.current = step.status === "start" ? step : null; })
+      .then((res) => deliverLetter(bot, w.ticker, res))
+      .catch((err) => deliverLetter(bot, w.ticker, null, err));
+  });
+  return S.watch.length;
+}
+
+function deliverLetter(bot, ticker, res, err) {
+  bot.state = "deliver";
+  bot.current = null;
+  bot.path = [[bot.x, 8 * T], [11 * T, 8 * T]];
+  bot.onArrive = () => {
+    const letter = res
+      ? { ...res, day: S.day, read: false }
+      : { ticker, day: S.day, headline: `No news on $${ticker}`, change: "same", summary: errorText(err), error: true, read: false };
+    S.mail.unshift(letter);
+    S.mail = S.mail.slice(0, 40);
+    if (res) {
+      S.spent += res.cost || 0;
+      const w = S.watch.find((x) => x.ticker === ticker);
+      if (w) w.last = { day: S.day, vibe: res.vibe, hype: res.hype, summary: res.summary, flags: res.flags || [] };
+      if (res.real) refreshBalance();
+    }
+    save();
+    toast(`📬 The night shift left a letter about $${ticker}`, 3200);
+  };
+}
+
+function openMail() {
+  const letters = S.mail;
+  openDialog({
+    who: { name: `Mailbox · ${letters.length} letter${letters.length === 1 ? "" : "s"}`, icon: ICONS.letter },
+    html: `<p class="hint">Letters from the night shift. Watch a coin from a harvest report and a robot re-checks it every night (up to ${Agents.WATCH_LIMIT} coins).</p>${letters.map(letterCard).join("")}`,
+    buttons: [{ label: "Close", primary: true }, { label: Orbio.isSignedIn() ? "Orbio account" : "Sign in with Orbio", onClick: () => setTimeout(openAccount, 0) }],
+    onOpen: (d) => hookCardButtons(d, openMail),
+  });
+  letters.forEach((m) => { m.read = true; });
+  save();
+}
+
+function letterCard(m) {
+  const arrow = { up: "▲", down: "▼", same: "●" }[m.change] || "●";
+  const hype = m.from ? `${m.from.hype} → ${m.hype}` : `${m.hype}`;
+  return `<div class="card letter${m.read ? "" : " unread"}">
+    <div class="head"><span class="ticker">$${esc(m.ticker)}</span><span class="change ${esc(m.change || "same")}">${arrow} ${esc(m.headline || "")}</span>
+      ${m.real === false ? `<span class="pretend">pretend</span>` : ""}</div>
+    ${m.error ? "" : `<div class="meter" title="hype ${hype}/100"><i style="width:${Math.max(0, Math.min(100, +m.hype || 0))}%"></i></div>
+    <div class="meta">Hype ${hype} · vibe ${esc(m.vibe)}${m.from ? ` (was ${esc(m.from.vibe)} on day ${m.from.day})` : ""}</div>`}
+    <p>${esc(m.summary)}</p>
+    ${(m.flags || []).filter((f) => f && !/^none$/i.test(f)).length ? `<div class="flags">⚑ ${m.flags.map(esc).join(" · ")}</div>` : ""}
+    ${trailDetails(m)}
+    <div class="meta">Day ${m.day} morning · night shift${m.real ? ` · ${(+m.cost || 0).toFixed(4)} CREDIT` : ""}</div>
+    ${isWatched(m.ticker) ? `<button class="btn small" data-unwatch="${esc(m.ticker)}">Stop watching $${esc(m.ticker)}</button>` : ""}
+  </div>`;
+}
+
+// Watch / stop-watching buttons inside cards; reopen the same view afterwards.
+function hookCardButtons(d, reopen) {
+  d.querySelectorAll("[data-watch]").forEach((b) => b.addEventListener("click", () => { watch(S.journal[+b.dataset.watch]); reopen(); }));
+  d.querySelectorAll("[data-unwatch]").forEach((b) => b.addEventListener("click", () => { unwatch(b.dataset.unwatch); reopen(); }));
 }
 
 // --- fishing
@@ -822,18 +944,24 @@ function fishCard(e) {
 
 function openJournal(tab = "crops") {
   if (!started) return;
-  const crops = S.journal, fish = S.fishLog;
+  const crops = S.journal, fish = S.fishLog, mail = S.mail;
   const list = tab === "crops"
-    ? (crops.length ? crops.map(cropCard).join("") : `<p class="empty">No harvests yet. Plant a seed in the field!</p>`)
-    : (fish.length ? fish.map(fishCard).join("") : `<p class="empty">No fish yet. Cast from the lake dock!</p>`);
+    ? (crops.length ? crops.map((e, i) => cropCard(e, false, i)).join("") : `<p class="empty">No harvests yet. Plant a seed in the field!</p>`)
+    : tab === "mail"
+      ? (mail.length ? mail.map(letterCard).join("") : `<p class="empty">No letters yet. Watch a coin from a harvest report and sleep; the night shift writes in the morning.</p>`)
+      : (fish.length ? fish.map(fishCard).join("") : `<p class="empty">No fish yet. Cast from the lake dock!</p>`);
   openDialog({
     who: { name: "Bulletin board", icon: ICONS.board },
     html: `<div class="tabs">
         <button class="btn" data-tab="crops" aria-pressed="${tab === "crops"}">🥕 Harvests (${crops.length})</button>
         <button class="btn" data-tab="fish" aria-pressed="${tab === "fish"}">🐟 Fish (${fish.length})</button>
+        <button class="btn" data-tab="mail" aria-pressed="${tab === "mail"}">📬 Letters (${mail.length})</button>
       </div>${list}`,
     buttons: [{ label: "Close", primary: true }],
-    onOpen: (d) => d.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => openJournal(b.dataset.tab))),
+    onOpen: (d) => {
+      d.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => openJournal(b.dataset.tab)));
+      hookCardButtons(d, () => openJournal(tab));
+    },
   });
 }
 
@@ -941,15 +1069,18 @@ function drawWalker(name, w, dir, fallback) {
   if (!Sprites.drawSheet(name, Math.round(w.x), Math.round(w.y), dir, col)) fallback();
 }
 function drawRobot(b, now) {
-  const name = b.hat && Sprites.has("robot-hat") ? "robot-hat" : "robot";
+  const name = b.night
+    ? (Sprites.has("robot-night") || Sprites.blocksMode() || !Sprites.has("robot") ? "robot-night" : "robot")
+    : b.hat && Sprites.has("robot-hat") ? "robot-hat" : "robot";
   const row = b.carrying && Sprites.sheetRows(name) >= 5 ? 4 : b.dir;
   const col = b.moving ? 1 + (Math.floor((now + (b.seed || 0) * 100) / 160) % 2) : 0;
   const x = Math.round(b.x), y = Math.round(b.y);
   if (!Sprites.drawSheet(name, x, y, row, col)) Art.robot(x, y, b.dir, now, b);
   // a working scout shows what it's doing in a thought bubble
-  if (b.state === "work" && b.plot != null && S.plots[b.plot]) {
-    const p = S.plots[b.plot];
-    const icon = isRipe(p) ? "done" : p.current?.icon || "think";
+  let icon = null;
+  if (b.night) icon = b.state === "deliver" ? "mail" : b.state === "night" ? b.current?.icon || "think" : null;
+  else if (b.state === "work" && b.plot != null && S.plots[b.plot]) { const p = S.plots[b.plot]; icon = isRipe(p) ? "done" : p.current?.icon || "think"; }
+  if (icon) {
     const by = y - 17 + (icon === "done" ? Math.round(Math.sin(now / 250)) : 0);
     if (!Sprites.drawStatic(`bubble-${icon}`, x + 8, by + 16)) Art.bubble(x, by, icon, now);
   }
@@ -1006,6 +1137,7 @@ function draw(now) {
   }
   list.push({ y: orbyNpc.baseY, draw: () => orbyNpc.draw(now) });
   if (!S.metOrby && started) list.push({ y: 9999, draw: () => Sprites.drawStatic("exclaim", 19 * T + 8, 6 * T - 2) || Art.exclaim(19 * T, 6 * T - 2) });
+  if (unreadMail() && started) list.push({ y: 9999, draw: () => Sprites.drawStatic("exclaim", mailbox.x + 8, mailbox.y - 2 + Math.round(Math.sin(now / 250))) || Art.exclaim(mailbox.x, mailbox.y - 2) });
   list.push({ y: player.y + 16, draw: () => drawWalker("farmer", player, S.dir, () => Art.person(Math.round(player.x), Math.round(player.y), S.dir, player.frame, player.moving)) });
   for (const b of [...bots, ...ambient]) list.push({ y: b.y + 16, draw: () => drawRobot(b, now) });
   folks.forEach((f, i) => list.push({ y: f.y + 16, draw: () => drawWalker(`folk-${i + 1}`, f, f.dir, () => Art.person(Math.round(f.x), Math.round(f.y), f.dir, f.frame, f.moving, f.look)) }));

@@ -87,11 +87,31 @@ const r3 = await Agents.runScout("rumor", "TEST");
 assert.equal(r3.vibe, "meh");
 console.log("✓ a rambling robot is nudged into writing its report");
 
-// 4. Pretend mode (signed out) acts out steps with made-up data.
+// 4. The night shift re-checks a coin against its last report and writes a "what changed" letter.
+script = [
+  { content: "", tool_calls: [toolCall("1", "x_search", { query: "$TEST" })] },
+  { content: '{"headline":"Hype heating up","change":"up","vibe":"hot","hype":82,"summary":"More posts than yesterday.","flags":[],"sources":["@whale"]}' },
+];
+chatTurn = 0; calls.length = 0;
+const last = { day: 3, vibe: "warm", hype: 64, summary: "A whale is pushing it.", flags: ["one big account"] };
+const n1 = await Agents.runNightCheck("TEST", last);
+assert.equal(n1.change, "up");
+assert.equal(n1.headline, "Hype heating up");
+assert.deepEqual(n1.from, { vibe: "warm", hype: 64, day: 3 });
+const nightChat = calls.find((c) => c.url.includes("/chat/completions")).body;
+assert.match(nightChat.messages[0].content, /On day 3 you reported: vibe "warm", hype 64/);
+assert.deepEqual(nightChat.tools.map((t) => t.function.name), ["x_search", "web_search", "read_page"], "night shift has no chain tool");
+console.log("✓ night shift compares against the last report:", n1.headline);
+
+// 5. Pretend mode (signed out) acts out steps with made-up data.
 Orbio.signOut();
 const pSteps = [];
 const r4 = await Agents.runScout("rumor", "SNAIL", (s) => pSteps.push(s));
 assert.equal(r4.real, false);
 assert.ok(r4.trail.length >= 2 && pSteps.filter((s) => s.status === "done").length === r4.trail.length);
 console.log("✓ pretend mode acts out", r4.trail.length, "steps");
+const n2 = await Agents.runNightCheck("SNAIL", { day: 1, vibe: "meh", hype: 40, summary: "", flags: [] });
+assert.equal(n2.real, false);
+assert.ok(["up", "down", "same"].includes(n2.change) && n2.headline && n2.from.hype === 40);
+console.log("✓ pretend night shift writes:", n2.headline);
 console.log("all agent tests passed");

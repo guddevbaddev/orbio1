@@ -9,6 +9,7 @@ The look follows the concept paintings in `assets/` (also used for the title scr
   - **Rumor Radish:** searches and reads the web (`web.search`, `web.scrape`). 4 steps, up to 3¢.
   - **Deep Root Daikon:** reads X and the web, and checks the token on-chain (`chain.read`: token info and recent transfers on EVM chains). 7 steps, up to 6¢, slower to grow.
 - Walk up to a growing crop to watch its robot's steps live. The harvest report shows the trail it took and its sources.
+- **Night shift:** press **Watch overnight** on a harvest report (up to 3 coins). Each time you sleep, a robot in a nightcap re-checks every watched coin against its last report (X, web search and pages; 3 steps, up to 1.5¢). In the morning it walks to the mailbox and leaves a letter: what changed, hype before and after, and the trail it took. Manage the watchlist at the Scout Station; letters are also on the bulletin board.
 - **The lake** is stocked each morning with the meme coins people on X are buzzing about. Cast from the dock to catch them.
 - **Town** across the bridge has townsfolk to chat with, market stalls, the Coin Cat fountain and the Meme Gazette.
 - An AI model on Orbio's gateway sums each one up as a vibe (hot / warm / meh / sus), a hype meter and any red flags.
@@ -32,6 +33,8 @@ Every picture in the game is a named slot. Drop `<slot>.png` into `assets/sprite
 
 `js/agents.js` runs a tool-calling loop on Orbio's chat gateway (OpenAI-compatible `tools`). Each turn the model either calls one of its seed's tools, which runs the matching Orbio tool with a `max_cost` cap, or writes its report as JSON. The loop stops at the seed's step limit or budget and forces a final report (`tool_choice: "none"`). Tools outside a seed's toolbox are refused. Robots only read; nothing can trade. Signed out, robots act out their steps with made-up data.
 
+The night shift uses the same loop (`runNightCheck`) with the coin's last report in its instructions, and answers with a headline and an up/down/same change.
+
 `node tests/agent-loop.test.mjs` runs the loop against a simulated Orbio and checks tool choice, limits and report parsing.
 
 ## Play locally
@@ -41,7 +44,7 @@ python3 -m http.server 8000
 # open http://localhost:8000
 ```
 
-Controls: arrow keys or WASD to walk, Space / E to use, J for the journal, B to switch between art and blocks view, Esc to close. On phones there's an on-screen pad.
+Controls: arrow keys or WASD to walk, Space / E to use, J for the journal (harvests, fish, letters), B to switch between art and blocks view, Esc to close. On phones there's an on-screen pad.
 
 ## Connect it to Orbio
 

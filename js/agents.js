@@ -111,9 +111,41 @@ export async function runScout(kind, rawTicker, onStep = () => {}) {
   const seed = SEEDS[kind];
   const ticker = Orbio.clean(rawTicker);
   if (!Orbio.isSignedIn()) return pretendScout(kind, ticker, onStep);
+  const out = await runAgent(seed, SYSTEM(seed, ticker), `Investigate $${ticker}.`, onStep);
+  return { ticker, ...out, real: true };
+}
 
+// ---------------------------------------------------------------- the night shift
+
+// While the player sleeps, a robot re-checks a coin it reported on before and writes a
+// "what changed" letter for the mailbox.
+export const NIGHT = {
+  name: "Night shift", tools: ["x_search", "web_search", "read_page"], maxSteps: 3, budget: 0.015,
+};
+export const WATCH_LIMIT = 3;
+
+const NIGHT_SYSTEM = (ticker, last) => `You are a scout robot on the night shift in a cozy farming game, re-checking the meme coin $${ticker}.
+You are cautious and you only observe: never tell anyone to buy, sell or hold.
+On day ${last.day} you reported: vibe "${last.vibe}", hype ${last.hype}/100. Summary: "${String(last.summary || "").slice(0, 300)}"${last.flags?.length ? ` Red flags then: ${last.flags.join("; ")}.` : ""}
+Find out what has changed since then: newest posts, fresh news, a shift in mood, new red flags, or nothing much.
+You can call: ${NIGHT.tools.join(", ")}. At most ${NIGHT.maxSteps} tool calls; prefer recent results (e.g. sort by latest, add "today" or the date to searches).
+When done, reply with JSON only:
+{"headline":"a short letter title, e.g. 'Hype cooling off'","change":"up"|"down"|"same","vibe":"hot"|"warm"|"meh"|"sus","hype":0-100,"summary":"two short friendly sentences about what changed","flags":["new red flags, if any"],"sources":["up to 3 URLs or @handles"]}`;
+
+export async function runNightCheck(rawTicker, last, onStep = () => {}) {
+  const ticker = Orbio.clean(rawTicker);
+  if (!Orbio.isSignedIn()) return pretendNight(ticker, last, onStep);
+  const out = await runAgent(NIGHT, NIGHT_SYSTEM(ticker, last), `Re-check $${ticker}. What changed since day ${last.day}?`, onStep);
+  return { ticker, ...out, from: { vibe: last.vibe, hype: last.hype, day: last.day }, real: true };
+}
+
+// ---------------------------------------------------------------- the agent loop
+
+// The model calls tools from its toolbox until it's done or out of steps/budget, then
+// writes a JSON report. Tools outside the toolbox are refused.
+async function runAgent(seed, system, task, onStep) {
   const tools = seed.tools.map((n) => ({ type: "function", function: { name: n, ...TOOLS[n].spec } }));
-  const messages = [{ role: "system", content: SYSTEM(seed, ticker) }, { role: "user", content: `Investigate $${ticker}.` }];
+  const messages = [{ role: "system", content: system }, { role: "user", content: task }];
   const trail = [];
   let cost = 0, steps = 0;
 
@@ -167,7 +199,7 @@ export async function runScout(kind, rawTicker, onStep = () => {}) {
     report = parseReport((await ask(true)).content);
   }
   if (!report) throw new Error("bad-report");
-  return { ticker, ...report, trail, steps, cost, real: true };
+  return { ...report, trail, steps, cost };
 }
 
 function parseReport(text) {
@@ -176,7 +208,10 @@ function parseReport(text) {
   try {
     const r = JSON.parse(m[0]);
     if (!r.vibe) return null;
-    return { vibe: String(r.vibe).toLowerCase(), hype: Math.max(0, Math.min(100, +r.hype || 0)), summary: r.summary || "", flags: r.flags || [], sources: (r.sources || []).slice(0, 3) };
+    const out = { vibe: String(r.vibe).toLowerCase(), hype: Math.max(0, Math.min(100, +r.hype || 0)), summary: r.summary || "", flags: r.flags || [], sources: (r.sources || []).slice(0, 3) };
+    if (r.headline) out.headline = String(r.headline).slice(0, 80);
+    if (r.change) out.change = ["up", "down", "same"].includes(r.change) ? r.change : "same";
+    return out;
   } catch { return null; }
 }
 
@@ -222,5 +257,34 @@ async function pretendScout(kind, ticker, onStep) {
     ticker, vibe, hype, summary: `${lines[vibe]} (Pretend data — sign in for real scouting.)`,
     flags: vibe === "sus" ? ["new accounts shilling", "copy-paste posts"] : [], sources: [],
     trail, steps: trail.length, cost: 0, real: false,
+  };
+}
+
+async function pretendNight(ticker, last, onStep) {
+  const h = Orbio.seeded(`${ticker}night${last.day}`);
+  const plan = [["x_search", `"$${ticker}" latest`, "12 posts"], ["web_search", `"${ticker}" news today`, "4 results"]];
+  const trail = [];
+  for (const [i, [tool, label, note]] of plan.entries()) {
+    const t = TOOLS[tool];
+    const step = { i, tool, icon: t.icon, verb: t.verb, label };
+    onStep({ ...step, status: "start" });
+    await sleep(2500 + ((h >> i) % 2000));
+    step.note = note;
+    trail.push(step);
+    onStep({ ...step, status: "done" });
+  }
+  const delta = (h % 41) - 20;
+  const hype = Math.max(0, Math.min(100, (+last.hype || 0) + delta));
+  const change = delta > 5 ? "up" : delta < -5 ? "down" : "same";
+  const vibe = hype > 80 ? "hot" : hype > 55 ? "warm" : h % 5 === 0 ? "sus" : "meh";
+  const text = {
+    up: [`$${ticker} heating up`, `More people are posting about $${ticker} than yesterday, and a couple of bigger accounts joined in.`],
+    down: [`$${ticker} cooling off`, `The $${ticker} chatter has quietened down since day ${last.day}. Fewer posts, fewer rocket emojis.`],
+    same: [`Not much new on $${ticker}`, `$${ticker} looks about the same as on day ${last.day}. Same crowd, same memes.`],
+  }[change];
+  return {
+    ticker, headline: text[0], change, vibe, hype, summary: `${text[1]} (Pretend data — sign in for real scouting.)`,
+    flags: vibe === "sus" ? ["sudden wave of new accounts"] : [], sources: [], trail, steps: trail.length, cost: 0,
+    from: { vibe: last.vibe, hype: last.hype, day: last.day }, real: false,
   };
 }

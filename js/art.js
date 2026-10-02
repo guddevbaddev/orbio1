@@ -500,8 +500,9 @@ export function robot(x, y, dir, t, opts = {}) {
     const wave = opts.busy ? Math.floor(t / 150) % 2 : 0;
     r(x + 2, y + 9 - wave, 2, 3, C.robot2); r(x + 12, y + 9 + wave - (opts.busy ? 1 : 0), 2, 3, C.robot2);
   }
-  // sprout or straw hat
-  if (opts.hat) { r(x + 1, y + 1, 14, 1, C.straw2); r(x + 4, y - 2, 8, 3, C.straw); r(x + 4, y, 8, 1, C.red); }
+  // sprout, straw hat or (night shift) a nightcap
+  if (opts.nightcap) { r(x + 3, y, 10, 2, C.overall2); r(x + 4, y - 2, 8, 2, C.overall); r(x + 8, y - 4, 4, 2, C.overall); r(x + 12, y - 5, 2, 2, C.white); r(x + 3, y + 1, 10, 1, C.white); }
+  else if (opts.hat) { r(x + 1, y + 1, 14, 1, C.straw2); r(x + 4, y - 2, 8, 3, C.straw); r(x + 4, y, 8, 1, C.red); }
   else { r(x + 7, y - 2, 1, 3, C.leaf3); r(x + 4, y - 3, 3, 2, C.leaf2); r(x + 8, y - 4, 3, 2, C.leafHi); }
   if (opts.busy && Math.floor(t / 300) % 2) { r(x + 13, y - 3, 2, 2, C.white); r(x + 15, y - 6, 1, 1, C.white); }
 }
@@ -557,8 +558,16 @@ export function bubble(x, y, icon, t) {
   else if (icon === "web") { ellipse(x + 8, y + 6, 4, 4, C.overall); r(x + 4, y + 6, 9, 1, C.sky); r(x + 8, y + 2, 1, 9, C.sky); }
   else if (icon === "page") { r(x + 5, y + 2, 6, 9, C.plaster2); for (let i = 0; i < 3; i++) r(x + 6, y + 4 + i * 2, 4, 1, C.ink); }
   else if (icon === "chain") { r(x + 4, y + 4, 4, 3, C.gold2); r(x + 8, y + 6, 4, 3, C.gold2); r(x + 5, y + 5, 2, 1, C.white); r(x + 9, y + 7, 2, 1, C.white); }
+  else if (icon === "mail") { r(x + 3, y + 3, 10, 7, C.plaster); r(x + 3, y + 3, 10, 1, C.ink); r(x + 3, y + 9, 10, 1, C.ink); r(x + 3, y + 3, 1, 7, C.ink); r(x + 12, y + 3, 1, 7, C.ink); for (let i = 0; i < 4; i++) { p(x + 4 + i, y + 4 + i, C.ink); p(x + 11 - i, y + 4 + i, C.ink); } r(x + 7, y + 7, 2, 2, C.red); }
   else if (icon === "done") { for (let i = 0; i < 3; i++) p(x + 4 + i, y + 6 + i, C.leaf); for (let i = 0; i < 5; i++) p(x + 7 + i, y + 8 - i, C.leaf); }
   else for (let i = 0; i < 3; i++) r(x + 4 + i * 3, y + 6 - (i === ph ? 1 : 0), 2, 2, C.ink);
+}
+
+// An envelope from the night shift, for the mail list.
+export function letter(x, y) {
+  r(x + 1, y + 3, 14, 10, C.ink); r(x + 2, y + 4, 12, 8, C.plaster);
+  for (let i = 0; i < 6; i++) { p(x + 2 + i, y + 4 + i, C.plaster2); p(x + 13 - i, y + 4 + i, C.plaster2); }
+  r(x + 7, y + 8, 3, 3, C.red); p(x + 8, y + 9, C.pink);
 }
 
 // Seed packet for the planting menu.
