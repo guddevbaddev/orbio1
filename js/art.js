@@ -211,6 +211,11 @@ export function crop(x, y, kind, stage, t, glow) {
     r(x + 5, y + 1 - bob, 2, 5, C.leaf); r(x + 9, y + 1 - bob, 2, 5, C.leaf); r(x + 7, y - bob, 2, 6, C.leafHi);
     r(x + 5, y + 6, 6, 4, C.orange); r(x + 6, y + 10, 4, 2, C.orange); r(x + 7, y + 12, 2, 1, C.orange);
     r(x + 6, y + 7, 1, 2, "#ffb066"); r(x + 9, y + 8, 1, 1, "#c95f12");
+  } else if (kind === "deep") {
+    // daikon: a long white root under a big leafy crown
+    r(x + 3, y - bob, 3, 6, C.leaf); r(x + 10, y - bob, 3, 6, C.leaf); r(x + 6, y - 1 - bob, 4, 7, C.leafHi); r(x + 5, y + 2, 6, 3, C.leaf3);
+    r(x + 5, y + 5, 6, 5, "#f4f1e6"); r(x + 6, y + 10, 4, 3, "#f4f1e6"); r(x + 7, y + 13, 2, 2, "#e6e0cc");
+    r(x + 6, y + 6, 1, 3, C.white); r(x + 9, y + 8, 1, 1, "#d8d0b8");
   } else {
     r(x + 6, y - bob, 2, 5, C.leaf); r(x + 8, y + 1 - bob, 2, 4, C.leafHi);
     r(x + 4, y + 5, 8, 6, "#e84a6a"); r(x + 5, y + 4, 6, 8, "#e84a6a"); r(x + 7, y + 12, 2, 2, C.white);
@@ -539,6 +544,29 @@ export function bobber(x, y, t, bite) {
   const b = bite ? (Math.floor(t / 80) % 2) * 2 : Math.round(Math.sin(t / 300));
   r(x + 6, y + 7 + b, 4, 2, C.red); r(x + 6, y + 9 + b, 4, 2, C.white); r(x + 7, y + 5 + b, 2, 2, C.ink);
   r(x + 4, y + 11, 8, 1, C.foam);
+}
+
+// A thought bubble a robot shows while it works: what tool it is using right now.
+// (x, y) is the 16×16 spot; the bubble's tail points at the bottom centre.
+export function bubble(x, y, icon, t) {
+  r(x + 1, y + 1, 14, 11, C.ink); r(x + 2, y, 12, 13, C.ink);
+  r(x + 2, y + 1, 12, 11, C.white); r(x + 3, y + 2, 10, 9, C.white);
+  r(x + 6, y + 13, 4, 1, C.ink); r(x + 7, y + 14, 2, 1, C.ink); r(x + 7, y + 12, 2, 2, C.white);
+  const ph = Math.floor(t / 250) % 3;
+  if (icon === "x") { for (let i = 0; i < 7; i++) { p(x + 4 + i, y + 3 + i, C.ink); p(x + 10 - i, y + 3 + i, C.ink); } }
+  else if (icon === "web") { ellipse(x + 8, y + 6, 4, 4, C.overall); r(x + 4, y + 6, 9, 1, C.sky); r(x + 8, y + 2, 1, 9, C.sky); }
+  else if (icon === "page") { r(x + 5, y + 2, 6, 9, C.plaster2); for (let i = 0; i < 3; i++) r(x + 6, y + 4 + i * 2, 4, 1, C.ink); }
+  else if (icon === "chain") { r(x + 4, y + 4, 4, 3, C.gold2); r(x + 8, y + 6, 4, 3, C.gold2); r(x + 5, y + 5, 2, 1, C.white); r(x + 9, y + 7, 2, 1, C.white); }
+  else if (icon === "done") { for (let i = 0; i < 3; i++) p(x + 4 + i, y + 6 + i, C.leaf); for (let i = 0; i < 5; i++) p(x + 7 + i, y + 8 - i, C.leaf); }
+  else for (let i = 0; i < 3; i++) r(x + 4 + i * 3, y + 6 - (i === ph ? 1 : 0), 2, 2, C.ink);
+}
+
+// Seed packet for the planting menu.
+export function seedPacket(x, y, kind) {
+  const col = { chatter: C.orange, rumor: "#e84a6a", deep: "#f4f1e6" }[kind] || C.gold;
+  r(x + 3, y + 1, 10, 14, C.woodDark); r(x + 4, y + 2, 8, 12, C.plaster);
+  r(x + 4, y + 2, 8, 3, col); r(x + 4, y + 2, 8, 1, C.ink);
+  ellipse(x + 8, y + 9, 2, 3, col); r(x + 7, y + 5, 2, 2, C.leaf2);
 }
 
 export function exclaim(x, y) {

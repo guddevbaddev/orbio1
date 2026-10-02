@@ -16,6 +16,7 @@
   header p { margin: 4px 0; max-width: 80ch; }
   .count { color: var(--neon); }
   main { max-width: 1100px; margin: 0 auto; padding: 8px 16px 48px; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+  .slot[hidden] { display: none; }
   .slot { background: var(--cream); color: var(--ink); border: 4px solid var(--wood-dark); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
   .slot h2 { font: 600 22px "Pixelify Sans", sans-serif; margin: 0; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
   .tag { font: 16px VT323, monospace; border: 2px solid var(--ink); border-radius: 999px; padding: 0 8px; white-space: nowrap; }
@@ -29,6 +30,8 @@
   .meta code { background: var(--cream-2); padding: 0 4px; }
   a.btn { align-self: start; background: var(--cream-2); color: var(--ink); border: 3px solid var(--wood-dark); border-radius: 4px; padding: 2px 10px; text-decoration: none; box-shadow: 0 3px 0 var(--wood-dark); }
   a.btn:hover { background: #fff; }
+  .filters { color: var(--cream); } .filters select { font: inherit; }
+  .since { font-size: 15px; opacity: .65; }
 </style>
 </head>
 <body>
@@ -37,6 +40,7 @@
   <p>Every picture the game draws has a slot below. Drop a PNG named after the slot into <code>assets/sprites/</code>, list it in <code>assets/sprites/manifest.json</code>, and the game uses it instead of the code-drawn version. Anything you haven't painted yet keeps its code art.</p>
   <p><b>Block guide</b>: the exact PNG size, with the tile grid (32px = one tile), the footprint it stands on (solid box) and the anchor dot at the bottom centre. <b>Current art</b>: what the game draws today, for reference. Keep the transparent background and keep things standing on the bottom edge. See <code>SPRITES.md</code> for the full spec, and press <b>B</b> in the game to see the whole map as blocks.</p>
   <p class="count" id="count"></p>
+  <p class="filters"><label><input type="checkbox" id="neededOnly"> Show only slots that still need art</label> · <label>Added in <select id="since"><option value="">any update</option></select></label> · full checklist in <code>SPRITE_TRACKER.md</code></p>
 </header>
 <main id="slots"></main>
 <script type="module">
@@ -49,11 +53,13 @@
     const el = document.createElement("section");
     el.className = "slot";
     el.id = slot.name;
+    el.dataset.since = slot.since || "v1";
     const has = Sprites.has(slot.name);
     if (has) painted++;
+    el.dataset.done = has ? "1" : "";
     el.innerHTML = `<h2>${slot.name}<span class="tag ${has ? "ok" : "code"}">${has ? "painted" : "code art"}</span></h2>
       <div class="pics"><div class="pic"><small>block guide</small></div><div class="pic"><small>current art</small></div><div class="pic"><small>yours</small></div></div>
-      <div class="meta">${slot.desc}<br>PNG: <code>${slot.name}.png</code> · ${Sprites.sizeLabel(slot)}${slot.night ? `<br>Optional night version: <code>${slot.name}-night.png</code> (lit windows)` : ""}</div>`;
+      <div class="meta"><span class="since">${slot.cat} · added in ${slot.since || "v1"}</span><br>${slot.desc}<br>PNG: <code>${slot.name}.png</code> · ${Sprites.sizeLabel(slot)}${slot.night ? `<br>Optional night version: <code>${slot.name}-night.png</code> (lit windows)` : ""}</div>`;
     const pics = el.querySelectorAll(".pic");
     const guide = Sprites.blockTemplate(slot);
     pics[0].append(guide);
@@ -73,6 +79,12 @@
     main.append(el);
   }
   document.getElementById("count").textContent = `${painted} of ${Sprites.SLOTS.length} slots painted.`;
+  const since = document.getElementById("since"), needed = document.getElementById("neededOnly");
+  for (const v of [...new Set(Sprites.SLOTS.map((s) => s.since || "v1"))]) since.insertAdjacentHTML("beforeend", `<option>${v}</option>`);
+  const filter = () => document.querySelectorAll(".slot").forEach((el) => {
+    el.hidden = (needed.checked && el.dataset.done) || (since.value && el.dataset.since !== since.value);
+  });
+  needed.addEventListener("change", filter); since.addEventListener("change", filter);
 </script>
 </body>
 </html>

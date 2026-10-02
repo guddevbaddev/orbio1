@@ -93,7 +93,16 @@ a { color: inherit; }
 .seed:hover, .seed:focus-visible { background: #fff; outline: none; }
 .seed canvas { width: 40px; height: 40px; image-rendering: pixelated; }
 .seed b { font: 600 20px "Pixelify Sans", sans-serif; display: block; }
-.seed span { font-size: 17px; opacity: .8; }
+.seed span { font-size: 17px; opacity: .8; display: block; }
+.seed .tools { font-size: 15px; opacity: .65; margin-top: 2px; }
+.trail { margin: 6px 0; padding-left: 0; list-style: none; }
+.trail li { padding: 2px 0; font-size: 18px; }
+.trail li .ti { display: inline-block; width: 26px; text-align: center; }
+.trail li i { opacity: .65; }
+.trail li.now { animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .55; } }
+.how summary { cursor: pointer; font-size: 18px; margin-top: 4px; }
+.log { background: #fff; border: 3px solid var(--wood-dark); border-radius: 6px; padding: 4px 10px; min-height: 40px; }
 
 /* Harvest / journal cards */
 .card { border: 3px solid var(--wood-dark); border-radius: 6px; background: #fff; padding: 10px 12px; margin: 8px 0; }

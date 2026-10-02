@@ -1,12 +1,13 @@
 import * as Art from "./art.js";
 import * as Orbio from "./orbio.js";
 import * as Sprites from "./sprites.js";
+import * as Agents from "./agents.js";
 
 const { T, C } = Art;
 const VIEW_W = 384, VIEW_H = 224; // game pixels; the canvas is 2× this for detail
 const DPR = Sprites.SCALE;
 const MAP_W = 48, MAP_H = 30;
-const GROW_MS = 25_000;          // how long a crop takes to ripen (real time)
+const GROW_MS = 25_000;          // default time for a crop to ripen (each seed sets its own)
 const REAL_MS_PER_10MIN = 7_000; // in-game clock speed
 const SAVE_KEY = "orbio-valley-save-v2";
 
@@ -87,7 +88,7 @@ B.station = spriteEnt("station", 14, 6, 2, 2, 32, 48, null, {
   draw: (t, lit) => {
     const e = B.station;
     if (!Sprites.drawStatic("station", e.x + 16, e.y + 48, lit)) ctx.drawImage(Art.stationBody(lit), e.x, e.y);
-    ctx.save(); ctx.translate(e.x, e.y); Art.stationCoin(t); ctx.restore();
+    if (!Sprites.drawSheet("station-coin", e.x + 8, e.y - 4, 0, Math.floor(t / 160) % 4)) { ctx.save(); ctx.translate(e.x, e.y); Art.stationCoin(t); ctx.restore(); }
   },
   lights: [[16, 6, 40], [16, 30, 22]],
 });
@@ -346,25 +347,20 @@ function toast(msg, ms = 2600) {
   toastTimer = setTimeout(() => el.classList.remove("show"), ms);
 }
 
-function icon(draw, size = 16) {
-  const c = document.createElement("canvas");
-  c.width = c.height = size;
-  const prev = Art.getContext();
-  Art.useContext(c.getContext("2d"));
-  draw(performance.now());
-  Art.useContext(prev);
-  return c;
-}
+// Menu and dialog pictures. Each is a sprite slot, so painted art drops straight in.
 const ICONS = {
-  orby: () => icon((t) => Art.orby(0, 0, t)),
-  farmer: () => icon(() => Art.person(0, 1, 0, 0, false)),
-  robot: () => icon((t) => Art.robot(0, 2, 0, 1000, { busy: true })),
-  chatter: () => icon(() => Art.crop(0, 1, "chatter", 3, 1)),
-  rumor: () => icon(() => Art.crop(0, 1, "rumor", 3, 1)),
-  mail: () => icon(() => Art.getContext().drawImage(Art.mailbox(true), 0, -3)),
-  board: () => icon(() => Art.getContext().drawImage(Art.board(), 0, -6)),
-  coin: () => icon(() => { const g = Art.getContext(); g.fillStyle = C.gold2; g.beginPath(); g.arc(8, 8, 7, 0, 7); g.fill(); g.fillStyle = C.gold; g.beginPath(); g.arc(8, 8, 5, 0, 7); g.fill(); }),
-  person: (look) => () => icon(() => Art.person(0, 1, 0, 0, false, look)),
+  orby: () => Sprites.uiImage("portrait-orby", 48),
+  farmer: () => Sprites.uiImage("portrait-farmer", 48),
+  robot: () => Sprites.uiImage("portrait-robot", 48),
+  shop: () => Sprites.uiImage("portrait-shopkeeper", 48),
+  folk: (i) => () => Sprites.uiImage(`portrait-folk-${i + 1}`, 48),
+  chatter: () => Sprites.uiImage("seed-chatter"),
+  rumor: () => Sprites.uiImage("seed-rumor"),
+  deep: () => Sprites.uiImage("seed-deep"),
+  fish: (rarity) => () => Sprites.uiImage(`fish-${rarity}`),
+  mail: () => Sprites.uiImage("icon-mailbox"),
+  board: () => Sprites.uiImage("icon-board"),
+  coin: () => Sprites.uiImage("icon-coin"),
 };
 
 // html: string. buttons: [{ label, primary, onClick, keepOpen }]. who: { name, icon }. banner: image url.
@@ -454,7 +450,7 @@ function interact() {
 const TIPS = [
   "Welcome to Orbio Valley! I'm Orby. Every crop on this farm is grown by a little AI scout robot that reads the internet about a meme coin.",
   "Head into the fenced field and press <b>Space</b> (or <b>A</b>) on an empty patch of soil. Pick a seed, give it a ticker like <b>$PEPE</b>, and a robot will tend it.",
-  "<b>Chatter Carrots</b> read what people on X are posting. <b>Rumor Radishes</b> search the open web. When it ripens you harvest the report.",
+  "Each robot is a little AI agent: it decides for itself what to read next. <b>Chatter Carrots</b> dig through X, <b>Rumor Radishes</b> search and read the web, and <b>Deep Root Daikons</b> do both and check the blockchain too. Walk up to a growing crop to see what its robot is doing.",
   "Walk down to the lake dock and cast a line to catch whatever coins are trending today. Rarer fish means more hype. The lake restocks every morning.",
   "Everything runs on <b>Orbio</b>: one balance pays for the AI model <i>and</i> the X and web reads. Check the mailbox to sign in, and the silo to see your spending.",
   "Over the bridge is town. Folks there love to gossip about coins. Remember: scouts only look. Hype isn't value, and lots of these coins are rugs!",
@@ -479,7 +475,7 @@ function chat(f) {
   f.dir = player.x < f.x - 6 ? 2 : player.x > f.x + 6 ? 3 : player.y < f.y ? 1 : 0;
   const [name, line] = QUOTES[f.q % QUOTES.length];
   f.q += LOOKS.length;
-  openDialog({ who: { name, icon: ICONS.person(f.look) }, html: `<p>${line}</p>` });
+  openDialog({ who: { name, icon: ICONS.folk(folks.indexOf(f)) }, html: `<p>${line}</p>` });
 }
 
 // --- places
@@ -508,12 +504,16 @@ function sleep(passedOut) {
 }
 
 function visitStation() {
-  const working = bots.filter((b) => b.state === "work" || b.state === "walk").length;
+  const working = bots.filter((b) => b.state === "work" || b.state === "walk").map((b) => S.plots[b.plot]).filter(Boolean);
+  const lines = working.map((p) => {
+    const doing = isRipe(p) ? "done, waiting for you to harvest" : p.current ? `${p.current.verb.toLowerCase()} ${p.current.label}` : p.result ? "writing up its report" : "deciding what to look at next";
+    return `<li><b>$${esc(p.ticker)}</b> (${esc(SEEDS[p.kind].name)}): ${esc(doing)}</li>`;
+  });
   openDialog({
     banner: "assets/banner-station.webp",
     who: { name: "Scout Station", icon: ICONS.robot },
-    html: `<p>This is where your scout robots charge up. Every seed you plant sends one out to the field. It reads X or the web through Orbio, asks an AI model what it all means, and grows the answer into a crop.</p>
-      <p><b>${working}</b> scout${working === 1 ? "" : "s"} out in the field right now.</p>`,
+    html: `<p>Your scout robots charge here. Each one is an AI agent with a toolbox (reading X, searching and reading the web, checking the blockchain), a step limit and a spending cap. It chooses its own steps, then grows what it learned into a crop.</p>
+      ${lines.length ? `<p>Out in the field right now:</p><ul class="trail">${lines.join("")}</ul>` : `<p class="hint">No robots out right now. Plant a seed in the field to send one.</p>`}`,
   });
 }
 
@@ -535,11 +535,11 @@ function visitBarn() {
   openDialog({ who: { name: "Barn", icon: ICONS.robot }, html: `<p>The cows don't care about meme coins. The chickens are suspiciously into $EGG.</p>` });
 }
 function visitGreenhouse() {
-  openDialog({ who: { name: "Greenhouse", icon: ICONS.robot }, html: `<p>Warm and glowing. A sign on the door says: <i>"Rare seeds coming soon: Whale Watermelons that track big wallets on-chain."</i></p>` });
+  openDialog({ who: { name: "Greenhouse", icon: ICONS.robot }, html: `<p>Warm and glowing. This is where the <b>Deep Root Daikon</b> was bred: a scout that reads X, the web <i>and</i> the blockchain, and decides for itself what to look at next.</p>` });
 }
 function visitStall() {
   const lines = ["Fresh turnips! Not a coin. Just turnips.", "Today's special: a pumpkin shaped like a candle chart.", "I'll trade you an apple for one hot tip.", "Sunflowers! They always point up, unlike my portfolio."];
-  openDialog({ who: { name: "Market stall", icon: ICONS.person(LOOKS[1]) }, html: `<p>${lines[Math.floor(Math.random() * lines.length)]}</p>` });
+  openDialog({ who: { name: "Market stall", icon: ICONS.shop }, html: `<p>${lines[Math.floor(Math.random() * lines.length)]}</p>` });
 }
 function visitFountain() {
   openDialog({ who: { name: "The Coin Cat statue", icon: ICONS.coin }, html: `<p>The town's founding cat, cast in stone, clutching a single golden coin. Locals toss pebbles in and whisper tickers for luck.</p>` });
@@ -549,7 +549,7 @@ function visitGazette() {
   const recent = [...S.fishLog.slice(0, 3)];
   openDialog({
     banner: "assets/banner-town.webp",
-    who: { name: "The Meme Gazette", icon: ICONS.coin },
+    who: { name: "The Meme Gazette", icon: ICONS.shop },
     html: `<p>"Read all about it! Whatever the valley is buzzing about, the lake is full of it. Our reporters are robots, our sources are posts on X, and none of this is financial advice."</p>
       ${recent.length ? `<p>Latest catches around town:</p>${recent.map(fishCard).join("")}` : `<p class="hint">Nothing in the paper yet. Go catch something from the lake dock!</p>`}`,
     buttons: [{ label: "Read the whole journal", primary: true, onClick: () => openJournal("fish") }, { label: "Leave" }],
@@ -597,10 +597,11 @@ $("purse").addEventListener("click", () => started && !dialogOpen && openMailbox
 
 // --- farming
 
-const SEEDS = {
-  chatter: { name: "Chatter Carrot", blurb: "Reads the top posts on X about a coin.", run: Orbio.scoutChatter },
-  rumor: { name: "Rumor Radish", blurb: "Searches the web for news and rumors.", run: Orbio.scoutRumors },
-};
+const SEEDS = Agents.SEEDS;
+const growMs = (p) => SEEDS[p.kind]?.growMs || GROW_MS;
+const TOOL_EMOJI = { x: "𝕏", web: "🌐", page: "📄", chain: "⛓️" };
+const TOOL_NAMES = { x_search: "X", web_search: "web search", read_page: "web pages", chain_lookup: "on-chain data" };
+const cents = (credit) => (credit * 100 < 1 ? "under 1¢" : `up to ${Math.round(credit * 100)}¢`);
 
 function usePlot(i) {
   const p = S.plots[i];
@@ -610,17 +611,39 @@ function usePlot(i) {
     sendBotHome(i);
     return openDialog({ who: ORBY, html: `<p>This one wilted. ${esc(p.error)}</p><p class="hint">I cleared the soil so you can replant.</p>` });
   }
-  if (!isRipe(p)) {
-    const left = Math.max(0, Math.ceil((p.plantedAt + GROW_MS - Date.now()) / 1000));
-    return toast(left > 0 ? `${SEEDS[p.kind].name} for $${p.ticker} — ripe in ${left}s` : `The $${p.ticker} scout is still out reading…`);
-  }
+  if (!isRipe(p)) return showRobotLog(i);
   harvest(i);
+}
+
+// What the robot on this plot has done so far, updated live while the dialog is open.
+let liveLog = null;
+function showRobotLog(i) {
+  const p = S.plots[i];
+  const left = Math.max(0, Math.ceil((p.plantedAt + growMs(p) - Date.now()) / 1000));
+  openDialog({
+    who: { name: `Scout robot · $${p.ticker}`, icon: ICONS.robot },
+    html: `<p>${SEEDS[p.kind].name}. ${left > 0 ? `Ripe in about ${left}s.` : "Almost done, finishing its report…"}</p><div class="log" id="robotLog"></div>`,
+    buttons: [{ label: "Let it work", primary: true, onClick: () => { liveLog = null; } }],
+    onOpen: (d) => { liveLog = { i, el: d.querySelector("#robotLog") }; renderLog(); },
+  });
+}
+function renderLog() {
+  if (!liveLog || $("dialog").hidden) { liveLog = null; return; }
+  const p = S.plots[liveLog.i];
+  if (!p) return;
+  liveLog.el.innerHTML = trailHtml(p.trail || [], p.current) || `<p class="hint">Deciding where to look first…</p>`;
+}
+function trailHtml(trail, current) {
+  const row = (s, now) => `<li class="${now ? "now" : ""}"><span class="ti">${TOOL_EMOJI[s.icon] || "•"}</span>${esc(s.verb)} <b>${esc(s.label)}</b>${s.note ? ` <i>· ${esc(s.note)}</i>` : now ? " <i>…</i>" : ""}</li>`;
+  const items = trail.map((s) => row(s, false));
+  if (current && !trail.some((s) => s.i === current.i)) items.push(row(current, true));
+  return items.length ? `<ol class="trail">${items.join("")}</ol>` : "";
 }
 
 function chooseSeed(i) {
   openDialog({
     who: ORBY,
-    html: `<p>What should we plant?</p><div class="seed-row" id="seedRow"></div>`,
+    html: `<p>Which scout should we plant? Each robot decides for itself what to read, up to its step limit.</p><div class="seed-row" id="seedRow"></div>`,
     buttons: [{ label: "Cancel" }],
     onOpen: (d) => {
       const row = d.querySelector("#seedRow");
@@ -629,7 +652,7 @@ function chooseSeed(i) {
         btn.className = "seed";
         btn.append(ICONS[kind]());
         const txt = document.createElement("div");
-        txt.innerHTML = `<b>${s.name}</b><span>${s.blurb}</span>`;
+        txt.innerHTML = `<b>${s.name}</b><span>${s.blurb}</span><span class="tools">${s.tools.map((t) => TOOL_NAMES[t]).join(" · ")} · ${s.maxSteps} steps · ${cents(s.budget)}</span>`;
         btn.append(txt);
         btn.addEventListener("click", () => askTicker(i, kind));
         row.append(btn);
@@ -647,28 +670,36 @@ function askTicker(i, kind) {
     closeDialog();
     plantSeed(i, kind, ticker);
   };
+  const seed = SEEDS[kind];
   openDialog({
     who: ORBY,
-    html: `<p>Which coin should this ${SEEDS[kind].name} sniff out?</p>
+    html: `<p>Which coin should this ${seed.name} investigate?</p>
       <input type="text" maxlength="13" placeholder="$PEPE" aria-label="Coin ticker" autocomplete="off" spellcheck="false">
-      <p class="hint">${Orbio.isSignedIn() ? "Costs about a cent from your Orbio balance." : "Pretend mode: you'll get made-up results until you sign in at the mailbox."}</p>`,
+      <p class="hint">${Orbio.isSignedIn() ? `It can take up to ${seed.maxSteps} steps and spends ${cents(seed.budget)} from your Orbio balance.` : "Pretend mode: the robot acts out its steps with made-up results until you sign in at the mailbox."}</p>`,
     buttons: [{ label: "🌱 Plant", primary: true, keepOpen: true, onClick: plant }, { label: "Cancel" }],
     onOpen: (d) => {
       const input = d.querySelector("input");
-      input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); plant(); } });
+      // stopPropagation: the same Enter mustn't reach the game and "use" the plot again
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); plant(); } });
       input.focus();
     },
   });
 }
 
 function plantSeed(i, kind, ticker) {
-  const plot = { kind, ticker, plantedAt: Date.now(), status: "growing", result: null };
+  const plot = { kind, ticker, plantedAt: Date.now(), status: "growing", result: null, trail: [], current: null };
   S.plots[i] = plot;
   save();
   spawnScoutBot(i);
-  toast(`🌱 Planted a ${SEEDS[kind].name} for $${ticker}. A scout bot is on its way!`);
-  SEEDS[kind].run(ticker)
-    .then((res) => { if (S.plots[i] === plot) { plot.result = res; save(); } })
+  toast(`🌱 Planted a ${SEEDS[kind].name} for $${ticker}. A scout robot is on its way!`);
+  const onStep = (step) => {
+    if (S.plots[i] !== plot) return;
+    if (step.status === "start") plot.current = step;
+    else if (step.status === "done") { plot.trail.push(step); plot.current = null; save(); }
+    if (liveLog?.i === i) renderLog();
+  };
+  Agents.runScout(kind, ticker, onStep)
+    .then((res) => { if (S.plots[i] === plot) { plot.result = res; plot.current = null; save(); if (liveLog?.i === i) renderLog(); } })
     .catch((err) => {
       if (S.plots[i] !== plot) return;
       plot.status = "wilted";
@@ -678,12 +709,13 @@ function plantSeed(i, kind, ticker) {
     });
 }
 
-const isRipe = (p) => p?.status === "growing" && p.result && Date.now() - p.plantedAt >= GROW_MS;
+const isRipe = (p) => p?.status === "growing" && p.result && Date.now() - p.plantedAt >= growMs(p);
 
 function errorText(err) {
   const m = err?.message || "";
   if (m === "no-balance") return "Your Orbio balance ran dry. Top up at orbio.so and try again.";
   if (m === "signed-out") return "You got signed out of Orbio. Visit the mailbox to sign back in.";
+  if (m === "bad-report") return "The robot got muddled and couldn't write its report. Try planting again.";
   return "It couldn't reach Orbio. Check your connection and replant.";
 }
 
@@ -700,27 +732,33 @@ function harvest(i) {
   if (r.real) refreshBalance();
   openDialog({
     who: { name: `${SEEDS[p.kind].name} harvested!`, icon: ICONS[p.kind] },
-    html: cropCard(entry) + `<p class="hint">Your scout bot is carrying the crate home. Saved to the bulletin board (press J).</p>`,
+    html: cropCard(entry, true) + `<p class="hint">Your scout robot is carrying the crate home. Saved to the bulletin board (press J).</p>`,
     buttons: [{ label: "Nice", primary: true }],
   });
 }
 
-function cropCard(e) {
+function cropCard(e, open = false) {
   const flags = (e.flags || []).filter((f) => f && !/^none$/i.test(f));
+  const sources = (e.sources || []).map((src) => /^https?:\/\//.test(src)
+    ? `<a href="${esc(src)}" target="_blank" rel="noopener">${esc(src.replace(/^https?:\/\/(www\.)?/, "").slice(0, 40))}</a>`
+    : esc(src));
+  const trail = e.trail?.length
+    ? `<details class="how"${open ? " open" : ""}><summary>How the robot investigated (${e.trail.length} step${e.trail.length === 1 ? "" : "s"})</summary>${trailHtml(e.trail)}${sources.length ? `<div class="meta">Sources: ${sources.join(" · ")}</div>` : ""}</details>`
+    : "";
   return `<div class="card">
     <div class="head"><span class="ticker">$${esc(e.ticker)}</span><span class="vibe ${esc(e.vibe)}">${esc(e.vibe)}</span>
       ${e.real ? "" : `<span class="pretend">pretend</span>`}</div>
     <div class="meter" title="hype ${+e.hype || 0}/100"><i style="width:${Math.max(0, Math.min(100, +e.hype || 0))}%"></i></div>
     <p>${esc(e.summary)}</p>
     ${flags.length ? `<div class="flags">⚑ ${flags.map(esc).join(" · ")}</div>` : ""}
-    <div class="meta">Day ${e.day} · ${e.kind === "rumor" ? "web search" : "X posts"}${e.real ? ` · ${(+e.cost || 0).toFixed(4)} CREDIT` : ""}</div>
+    ${trail}
+    <div class="meta">Day ${e.day} · ${esc(SEEDS[e.kind]?.name || e.kind)}${e.real ? ` · ${(+e.cost || 0).toFixed(4)} CREDIT` : ""}</div>
   </div>`;
 }
 
 // --- fishing
 
 const RARITY = (h) => (h >= 85 ? "legendary" : h >= 60 ? "rare" : h >= 30 ? "uncommon" : "common");
-const FISH_COLOR = { common: "#9a9488", uncommon: "#4fa8e0", rare: "#9a6ae0", legendary: "#ffd34d" };
 
 async function cast(tx, ty) {
   if (stockingPond) return toast("Orby is still stocking the lake…");
@@ -764,7 +802,7 @@ function reelIn() {
   S.fishLog = S.fishLog.slice(0, 80);
   save();
   openDialog({
-    who: { name: `You caught a ${rarity} fish!`, icon: () => icon(() => Art.fishSprite(0, 0, FISH_COLOR[rarity])) },
+    who: { name: `You caught a ${rarity} fish!`, icon: ICONS.fish(rarity) },
     html: fishCard(entry),
     buttons: [{ label: "Into the bucket", primary: true }],
   });
@@ -853,7 +891,7 @@ function tryMove(dx, dy) {
 function cropStage(p) {
   if (!p || p.status === "wilted") return -1;
   if (isRipe(p)) return 3;
-  return Math.min(2, Math.floor(((Date.now() - p.plantedAt) / GROW_MS) * 3));
+  return Math.min(2, Math.floor(((Date.now() - p.plantedAt) / growMs(p)) * 3));
 }
 
 // ================================================================ draw
@@ -906,7 +944,15 @@ function drawRobot(b, now) {
   const name = b.hat && Sprites.has("robot-hat") ? "robot-hat" : "robot";
   const row = b.carrying && Sprites.sheetRows(name) >= 5 ? 4 : b.dir;
   const col = b.moving ? 1 + (Math.floor((now + (b.seed || 0) * 100) / 160) % 2) : 0;
-  if (!Sprites.drawSheet(name, Math.round(b.x), Math.round(b.y), row, col)) Art.robot(Math.round(b.x), Math.round(b.y), b.dir, now, b);
+  const x = Math.round(b.x), y = Math.round(b.y);
+  if (!Sprites.drawSheet(name, x, y, row, col)) Art.robot(x, y, b.dir, now, b);
+  // a working scout shows what it's doing in a thought bubble
+  if (b.state === "work" && b.plot != null && S.plots[b.plot]) {
+    const p = S.plots[b.plot];
+    const icon = isRipe(p) ? "done" : p.current?.icon || "think";
+    const by = y - 17 + (icon === "done" ? Math.round(Math.sin(now / 250)) : 0);
+    if (!Sprites.drawStatic(`bubble-${icon}`, x + 8, by + 16)) Art.bubble(x, by, icon, now);
+  }
 }
 function drawAnimal(a, now) {
   const x = Math.round(a.x), y = Math.round(a.y), flip = a.dir === 2;
@@ -959,7 +1005,7 @@ function draw(now) {
     if (L.lit && e.lights) for (const [lx, ly, rad] of e.lights) lights.push([e.x + lx, e.y + ly, rad]);
   }
   list.push({ y: orbyNpc.baseY, draw: () => orbyNpc.draw(now) });
-  if (!S.metOrby && started) list.push({ y: 9999, draw: () => Art.exclaim(19 * T, 6 * T - 2) });
+  if (!S.metOrby && started) list.push({ y: 9999, draw: () => Sprites.drawStatic("exclaim", 19 * T + 8, 6 * T - 2) || Art.exclaim(19 * T, 6 * T - 2) });
   list.push({ y: player.y + 16, draw: () => drawWalker("farmer", player, S.dir, () => Art.person(Math.round(player.x), Math.round(player.y), S.dir, player.frame, player.moving)) });
   for (const b of [...bots, ...ambient]) list.push({ y: b.y + 16, draw: () => drawRobot(b, now) });
   folks.forEach((f, i) => list.push({ y: f.y + 16, draw: () => drawWalker(`folk-${i + 1}`, f, f.dir, () => Art.person(Math.round(f.x), Math.round(f.y), f.dir, f.frame, f.moving, f.look)) }));
@@ -976,8 +1022,9 @@ function draw(now) {
     ctx.strokeStyle = "rgba(255,255,255,.75)";
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(player.x + 13, player.y + 4); ctx.quadraticCurveTo((player.x + bx) / 2 + 8, Math.min(player.y, by) - 6, bx + 8, by + 7); ctx.stroke();
-    Art.bobber(bx, by, now, fishing.phase === "bite");
-    if (fishing.phase === "bite") Art.exclaim(Math.round(player.x), Math.round(player.y) - 4);
+    const bob = fishing.phase === "bite" ? (Math.floor(now / 80) % 2) * 2 : Math.round(Math.sin(now / 300));
+    if (!Sprites.drawStatic("bobber", bx + 8, by + 16 + bob)) Art.bobber(bx, by, now, fishing.phase === "bite");
+    if (fishing.phase === "bite") Sprites.drawStatic("exclaim", Math.round(player.x) + 8, Math.round(player.y) - 4) || Art.exclaim(Math.round(player.x), Math.round(player.y) - 4);
   }
 
   // highlight what you'd interact with

@@ -113,6 +113,12 @@ function gridOf(slot, img) {
 // w/h are game pixels for static sprites; cellW/cellH are PNG pixels for sheets.
 
 const statics = (name, w, h, desc, code, night) => ({ name, kind: "static", w, h, desc, code, night });
+// UI pieces and portraits are static images too; they're drawn in menus and over heads.
+const ui = (name, w, h, desc, code) => ({ name, kind: "static", w, h, desc, code, cat: "ui", since: "agents" });
+const portrait = (who, desc, draw) => ({
+  name: `portrait-${who}`, kind: "static", w: 48, h: 48, cat: "portrait", since: "agents", desc: `Dialog portrait: ${desc}`,
+  code: () => { const c = cell(draw); const big = document.createElement("canvas"); big.width = big.height = 48; const g = big.getContext("2d"); g.imageSmoothingEnabled = false; g.drawImage(c, 0, 0, 48, 48); return big; },
+});
 export const SLOTS = [
   statics("farmhouse", 112, 112, "Your timber farmhouse. Footprint 7×4 tiles; the door is at the bottom centre.", (lit) => Art.farmhouse(lit), true),
   statics("barn", 80, 96, "Red barn with a big door at the bottom centre. Footprint 5×4 tiles.", (lit) => Art.barn(lit), true),
@@ -163,17 +169,58 @@ export const SLOTS = [
   { name: "orby", kind: "sheet", cols: 4, rows: 1, cellW: 32, cellH: 32, desc: "Orby, the lime-green orb spirit (Orbio's mascot). Four frames of a gentle bob.", code: (d, f) => Art.orby(0, 0, f * 600) },
   { name: "crop-chatter", kind: "sheet", cols: 4, rows: 1, cellW: 32, cellH: 32, desc: "Chatter Carrot growth stages: seeds, sprout, leafy, ripe carrot.", code: (d, f) => Art.crop(0, 0, "chatter", f, 1) },
   { name: "crop-rumor", kind: "sheet", cols: 4, rows: 1, cellW: 32, cellH: 32, desc: "Rumor Radish growth stages: seeds, sprout, leafy, ripe radish.", code: (d, f) => Art.crop(0, 0, "rumor", f, 1) },
+  { name: "crop-deep", kind: "sheet", cols: 4, rows: 1, cellW: 32, cellH: 32, since: "agents", desc: "Deep Root Daikon growth stages: seeds, sprout, leafy, ripe long white daikon.", code: (d, f) => Art.crop(0, 0, "deep", f, 1) },
+  { name: "station-coin", kind: "sheet", cols: 4, rows: 1, cellW: 32, cellH: 32, cat: "ui", since: "agents", desc: "The orb-coin floating and spinning above the Scout Station. Four frames: face-on, turning, edge-on, turning back.", code: (d, f) => { const g = Art.getContext(); g.save(); g.translate(-8, 3); Art.stationCoin(f * 314); g.restore(); } },
+
+  // Thought bubbles: what a working robot is doing right now (drawn above its head).
+  ...[["x", "reading X"], ["web", "searching the web"], ["page", "reading a web page"], ["chain", "checking the blockchain"], ["think", "thinking (between steps)"], ["done", "finished, ready to harvest"]].map(([k, what]) =>
+    ui(`bubble-${k}`, 16, 16, `Robot thought bubble: ${what}. The tail points down at the robot's head.`, () => cell(() => Art.bubble(0, 0, k, 0)))),
+  // Seed packets in the planting menu.
+  ...[["chatter", "Chatter Carrot (orange)"], ["rumor", "Rumor Radish (pink-red)"], ["deep", "Deep Root Daikon (white)"]].map(([k, what]) =>
+    ui(`seed-${k}`, 16, 16, `Seed packet for ${what}, shown in the planting menu.`, () => cell(() => Art.seedPacket(0, 0, k)))),
+  // Fish you catch in the lake, by rarity.
+  ...[["common", "#9a9488"], ["uncommon", "#4fa8e0"], ["rare", "#9a6ae0"], ["legendary", "#ffd34d"]].map(([k, col]) =>
+    ui(`fish-${k}`, 16, 16, `A ${k} fish (each one is a trending meme coin). Shown when you catch it.`, () => cell(() => Art.fishSprite(0, 0, col)))),
+  ui("bobber", 16, 16, "Fishing bobber floating on the water.", () => cell(() => Art.bobber(0, 0, 0, false))),
+  ui("exclaim", 16, 16, "The ! that pops up when a fish bites (and over Orby before you meet).", () => cell(() => Art.exclaim(0, 11))),
+  ui("icon-mailbox", 16, 16, "Dialog icon for the mailbox (Sign in with Orbio).", () => cell(() => Art.getContext().drawImage(Art.mailbox(true), 0, -3))),
+  ui("icon-board", 16, 16, "Dialog icon for the bulletin board (journal).", () => cell(() => Art.getContext().drawImage(Art.board(), 0, -6))),
+  ui("icon-coin", 16, 16, "Dialog icon for coins: the Credit Silo, the Meme Gazette, the Coin Cat fountain.", () => cell(() => { const g = Art.getContext(); g.fillStyle = Art.C.gold2; g.beginPath(); g.arc(8, 8, 7, 0, 7); g.fill(); g.fillStyle = Art.C.gold; g.beginPath(); g.arc(8, 8, 5, 0, 7); g.fill(); })),
+
+  // Character portraits for dialog boxes (shown 40px tall in the UI).
+  portrait("orby", "Orby, the lime-green orb spirit and your guide.", () => Art.orby(0, 0, 0)),
+  portrait("farmer", "The player: straw hat, orange hair, blue overalls.", () => Art.person(0, 1, 0, 0, false)),
+  portrait("robot", "A scout robot: white body, dark visor, cyan eyes, leaf sprout.", () => Art.robot(0, 2, 0, 1000, { busy: true })),
+  portrait("shopkeeper", "Market stall keeper and Meme Gazette clerk.", () => Art.person(0, 1, 0, 0, false, { hair: "#f0d070", hat: Art.C.straw, shirt: "#5aa05a", pants: "#3f6fc0" })),
+  ...[["#3b2416", null, "#e0483a", "#55331b", "Mabel"], ["#f0d070", Art.C.straw, "#5aa05a", "#3f6fc0", "Gus"], ["#7a3a1a", "#3f6fc0", "#f2f0e6", "#6d4426", "Juniper"], ["#cfcfcf", null, "#9b6ad8", "#2e3245", "Old Pete"]].map(([hair, hat, shirt, pants, who], i) =>
+    portrait(`folk-${i + 1}`, `${who}, a townsperson (matches folk-${i + 1}).`, () => Art.person(0, 1, 0, 0, false, { hair, hat, shirt, pants }))),
 ];
 // Footprint (tiles the thing stands on) and category for each slot.
 const FOOT = { farmhouse: [7, 4], barn: [5, 4], silo: [2, 2], station: [2, 2], greenhouse: [6, 4], gazette: [6, 4], fountain: [3, 3] };
 for (const s of SLOTS) {
   if (s.kind === "static") {
     [s.fw, s.fh] = FOOT[s.name] || (s.name.startsWith("stall") ? [2, 1] : [1, 1]);
-    s.cat = s.fw > 1 || s.name.startsWith("stall") ? "building" : /^(tree|bush|sunflower)/.test(s.name) ? "nature" : "prop";
-  } else if (s.kind === "sheet") s.cat = s.name.startsWith("crop") ? "crop" : "character";
+    s.cat ||= s.fw > 1 || s.name.startsWith("stall") ? "building" : /^(tree|bush|sunflower)/.test(s.name) ? "nature" : "prop";
+  } else if (s.kind === "sheet") s.cat ||= s.name.startsWith("crop") ? "crop" : "character";
   else s.cat = "tile";
+  s.since ||= "v1";
 }
 const SLOT = Object.fromEntries(SLOTS.map((s) => [s.name, s]));
+
+// A canvas for menus and dialogs: the painted PNG, else a block (blocks view), else code art.
+export function uiImage(name, size = 16) {
+  const slot = SLOT[name], img = images.get(name);
+  const c = document.createElement("canvas");
+  if (img) { c.width = img.width; c.height = img.height; c.getContext("2d").drawImage(img, 0, 0); return c; }
+  if (slot && (blocksMode() || !slot.code)) {
+    c.width = c.height = size;
+    const prev = Art.getContext(); Art.useContext(c.getContext("2d"));
+    Blocks.staticBlock(name.replace(/^(portrait|icon|bubble|seed|fish)-/, ""), slot.cat, size / 2, size, size, size, 1, 1);
+    Art.useContext(prev);
+    return c;
+  }
+  return slot?.code ? slot.code() : c;
+}
 
 // ---------------------------------------------------------------- the world file
 // assets/world.json adds new props and buildings without touching code:

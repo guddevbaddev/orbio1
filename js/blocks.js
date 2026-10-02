@@ -6,7 +6,7 @@
 import * as Art from "./art.js";
 
 export const COLORS = {
-  building: "#d9825b", nature: "#6fae5a", prop: "#d6b04e", character: "#5b8fd8", crop: "#a3c94a",
+  building: "#d9825b", nature: "#6fae5a", prop: "#d6b04e", character: "#5b8fd8", crop: "#a3c94a", ui: "#c98ad8", portrait: "#e28bb0",
   grass: "#9ccc74", cobble: "#cbbb9c", dirt: "#d0a46e", water: "#62aee4", waterfall: "#9fd8f7", cliff: "#8e8b86",
   bridge: "#b07f4c", dock: "#a8774a", soil: "#7d5638", "soil-wet": "#5c3c26",
 };
@@ -68,6 +68,12 @@ export function sheetBlock(name, category, x, y, cellW, cellH, row, col, showNam
   const base = COLORS[category] || COLORS.character;
   const w = cellW / 2, h = cellH / 2;
   const bx = Math.round(x + 8 - w / 2), by = y + 16 - h;
+  if (category === "ui") {
+    rect(bx + 1, by + 1, w - 2, h - 2, base); outline(bx + 1, by + 1, w - 2, h - 2, INK);
+    Art.tinyText(String(col + 1), Math.round(x + 7), by + Math.round(h / 2) - 2, INK);
+    if (showName) label(name, x + 8, by - 6, 40);
+    return true;
+  }
   if (category === "crop") {
     const hgt = [3, 6, 10, 14][Math.min(3, col)];
     rect(x + 4, y + 16 - hgt - 1, 8, hgt, shade(base, 0.9 + col * 0.05)); outline(x + 4, y + 16 - hgt - 1, 8, hgt, INK);

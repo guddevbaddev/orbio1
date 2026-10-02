@@ -162,35 +162,14 @@ async function chatJSON(system, user) {
   return { data: JSON.parse(json[0]), cost: +(r.usage?.cost || 0) };
 }
 
-// ---------- scouting jobs ----------
+// ---------- shared helpers ----------
 
-const VIBE_PROMPT = `You are a cautious meme coin scout in a cozy farming game. You only observe; never tell anyone to buy or sell.
-Read the material and reply with JSON only:
-{"vibe":"hot"|"warm"|"meh"|"sus","hype":0-100,"summary":"two short friendly sentences","flags":["up to 3 short red flags, or none"]}`;
+export const clean = (t) => String(t).replace(/^\$/, "").replace(/[^A-Za-z0-9]/g, "").slice(0, 12).toUpperCase();
 
-const clean = (t) => t.replace(/^\$/, "").replace(/[^A-Za-z0-9]/g, "").slice(0, 12).toUpperCase();
-
-// Chatter Carrot: what is X saying about $TICKER?
-export async function scoutChatter(rawTicker) {
-  const ticker = clean(rawTicker);
-  if (!isSignedIn()) return pretendVibe(ticker, "chatter");
-  const x = await tool("social.x.posts", { query: `$${ticker} -filter:replies`, sort: "Top", limit: 20, max_cost: "0.006" });
-  const posts = (x.result?.tweets || []).map((t) =>
-    `@${t.user?.screen_name} (${t.user?.followers_count} followers, ${t.favorite_count} likes): ${t.full_text}`.slice(0, 280));
-  if (!posts.length) return { ticker, vibe: "meh", hype: 0, summary: `Crickets. Nobody on X is talking about $${ticker} right now.`, flags: [], cost: x.cost, real: true };
-  const ai = await chatJSON(VIBE_PROMPT, `Ticker: $${ticker}\nTop posts on X:\n${posts.join("\n")}`);
-  return { ticker, ...ai.data, top: posts[0], cost: x.cost + ai.cost, real: true };
-}
-
-// Rumor Radish: what does the open web say about $TICKER?
-export async function scoutRumors(rawTicker) {
-  const ticker = clean(rawTicker);
-  if (!isSignedIn()) return pretendVibe(ticker, "rumor");
-  const w = await tool("web.search", { query: `${ticker} meme coin`, limit: 6, max_cost: "0.008" });
-  const hits = (w.result?.results || []).map((r) => `${r.title} — ${r.description || ""} (${r.url})`.slice(0, 300));
-  if (!hits.length) return { ticker, vibe: "meh", hype: 0, summary: `The web has nothing on $${ticker}. Either very new or very made-up.`, flags: ["no web footprint"], cost: w.cost, real: true };
-  const ai = await chatJSON(VIBE_PROMPT, `Ticker: $${ticker}\nWeb search results:\n${hits.join("\n")}`);
-  return { ticker, ...ai.data, cost: w.cost + ai.cost, real: true };
+// The scout robots (js/agents.js) drive these directly.
+export { tool };
+export async function chat(body) {
+  return authed(`${API}/chat/completions`, { model: SCOUT_MODEL, ...body });
 }
 
 // Fishing: which meme coins are people buzzing about right now? Returns a pond's worth.
@@ -215,23 +194,7 @@ const PRETEND = [
   ["GLOWWORM", "Only trends after midnight."], ["CORNDOG", "Food coin season returns."],
   ["MUSHI", "Cozy mushroom art, cozy vibes, cozy anonymous dev."], ["RUGRAT", "The name is a hint."],
 ];
-const seeded = (s) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
-
-function pretendVibe(ticker, kind) {
-  const h = seeded(ticker + kind);
-  const hype = h % 101;
-  const vibe = hype > 80 ? "hot" : hype > 55 ? "warm" : h % 4 === 0 ? "sus" : "meh";
-  const lines = {
-    hot: `Pretend scouts say $${ticker} is everywhere today. Lots of rocket emojis.`,
-    warm: `A steady trickle of $${ticker} posts. Some fans, some skeptics.`,
-    meh: `$${ticker} is quiet. A few posts, mostly the same three accounts.`,
-    sus: `$${ticker} chatter looks copy-pasted. Lots of brand new accounts.`,
-  };
-  return new Promise((ok) => setTimeout(() => ok({
-    ticker, vibe, hype, summary: lines[vibe] + " (Pretend data — sign in for real scouting.)",
-    flags: vibe === "sus" ? ["new accounts shilling", "copy-paste posts"] : [], cost: 0, real: false,
-  }), 1500 + (h % 2000)));
-}
+export const seeded = (s) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
 
 function pretendPond() {
   return PRETEND.map(([ticker, blurb]) => ({ ticker, blurb, hype: seeded(ticker) % 101, real: false }))

@@ -22,7 +22,11 @@ The game draws everything with code until a painted PNG exists for it. Every pic
 - **Faded box:** the picture area. Roofs, tree canopies and anything else that rises above the ground go here.
 - **Solid box:** the footprint, the tiles it stands on and blocks the player from. The bottom of your art should sit on the bottom edge of this box.
 - **Dot at the bottom centre:** the anchor. The game lines this point up with the footprint, so you can make art taller than the guide and it will still stand in the right place.
-- **Block colours:** orange is a building, green is nature, yellow is a prop, blue is a character, lime is a crop. Ground materials are flat colour tiles.
+- **Block colours:** orange is a building, green is nature, yellow is a prop, blue is a character, lime is a crop, purple is UI (bubbles, icons, seed packets, fish), pink is a dialog portrait. Ground materials are flat colour tiles.
+
+## What still needs art
+
+`SPRITE_TRACKER.md` is the checklist: every slot, painted or not, most important first, with its size and which update added it. Re-run `node tools/sprite-tracker.mjs` after adding sprites. Every new feature adds its own slots, so the tracker is how you spot new work. `sprites.html` can also filter to "still needs art" and by update.
 
 ## Adding new things (no code)
 
@@ -57,7 +61,8 @@ The two entries already in the file, `well` and `windmill`, are examples: they s
 2. **Main buildings:** `farmhouse`, `barn`, `station`, `silo`, `gazette`, `fountain`, `greenhouse`.
 3. **Trees:** `tree-round`, `tree-apple`, `tree-cherry`, `tree-pine`.
 4. **Characters:** `robot`, `robot-hat`, `farmer`, `orby`, then `folk-1`…`folk-4`, `cow`, `chicken`.
-5. **Props and crops:** everything else.
+5. **Crops:** `crop-chatter`, `crop-rumor`, `crop-deep`.
+6. **Props, portraits and UI:** everything else. Dialog portraits are 96×96 and shown about 40px tall; UI icons and thought bubbles are 32×32.
 
 ## Prompt template for an image generator
 
@@ -121,3 +126,31 @@ Characters: *"small cute white robot with a dark visor and glowing cyan eyes and
 | `orby.png` | 32×32 per cell, 4 cols × 1 rows = 128×32 | Orby, the lime-green orb spirit (Orbio's mascot). Four frames of a gentle bob. |
 | `crop-chatter.png` | 32×32 per cell, 4 cols × 1 rows = 128×32 | Chatter Carrot growth stages: seeds, sprout, leafy, ripe carrot. |
 | `crop-rumor.png` | 32×32 per cell, 4 cols × 1 rows = 128×32 | Rumor Radish growth stages: seeds, sprout, leafy, ripe radish. |
+| `crop-deep.png` | 32×32 per cell, 4 cols × 1 rows = 128×32 | Deep Root Daikon growth stages: seeds, sprout, leafy, ripe long white daikon. |
+| `station-coin.png` | 32×32 per cell, 4 cols × 1 rows = 128×32 | The orb-coin floating and spinning above the Scout Station. Four frames: face-on, turning, edge-on, turning back. |
+| `bubble-x.png` | 32×32 | Robot thought bubble: reading X. The tail points down at the robot's head. |
+| `bubble-web.png` | 32×32 | Robot thought bubble: searching the web. The tail points down at the robot's head. |
+| `bubble-page.png` | 32×32 | Robot thought bubble: reading a web page. The tail points down at the robot's head. |
+| `bubble-chain.png` | 32×32 | Robot thought bubble: checking the blockchain. The tail points down at the robot's head. |
+| `bubble-think.png` | 32×32 | Robot thought bubble: thinking (between steps). The tail points down at the robot's head. |
+| `bubble-done.png` | 32×32 | Robot thought bubble: finished, ready to harvest. The tail points down at the robot's head. |
+| `seed-chatter.png` | 32×32 | Seed packet for Chatter Carrot (orange), shown in the planting menu. |
+| `seed-rumor.png` | 32×32 | Seed packet for Rumor Radish (pink-red), shown in the planting menu. |
+| `seed-deep.png` | 32×32 | Seed packet for Deep Root Daikon (white), shown in the planting menu. |
+| `fish-common.png` | 32×32 | A common fish (each one is a trending meme coin). Shown when you catch it. |
+| `fish-uncommon.png` | 32×32 | A uncommon fish (each one is a trending meme coin). Shown when you catch it. |
+| `fish-rare.png` | 32×32 | A rare fish (each one is a trending meme coin). Shown when you catch it. |
+| `fish-legendary.png` | 32×32 | A legendary fish (each one is a trending meme coin). Shown when you catch it. |
+| `bobber.png` | 32×32 | Fishing bobber floating on the water. |
+| `exclaim.png` | 32×32 | The ! that pops up when a fish bites (and over Orby before you meet). |
+| `icon-mailbox.png` | 32×32 | Dialog icon for the mailbox (Sign in with Orbio). |
+| `icon-board.png` | 32×32 | Dialog icon for the bulletin board (journal). |
+| `icon-coin.png` | 32×32 | Dialog icon for coins: the Credit Silo, the Meme Gazette, the Coin Cat fountain. |
+| `portrait-orby.png` | 96×96 | Dialog portrait: Orby, the lime-green orb spirit and your guide. |
+| `portrait-farmer.png` | 96×96 | Dialog portrait: The player: straw hat, orange hair, blue overalls. |
+| `portrait-robot.png` | 96×96 | Dialog portrait: A scout robot: white body, dark visor, cyan eyes, leaf sprout. |
+| `portrait-shopkeeper.png` | 96×96 | Dialog portrait: Market stall keeper and Meme Gazette clerk. |
+| `portrait-folk-1.png` | 96×96 | Dialog portrait: Mabel, a townsperson (matches folk-1). |
+| `portrait-folk-2.png` | 96×96 | Dialog portrait: Gus, a townsperson (matches folk-2). |
+| `portrait-folk-3.png` | 96×96 | Dialog portrait: Juniper, a townsperson (matches folk-3). |
+| `portrait-folk-4.png` | 96×96 | Dialog portrait: Old Pete, a townsperson (matches folk-4). |

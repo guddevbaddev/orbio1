@@ -4,9 +4,11 @@ A cozy pixel farming game built on [Orbio](https://www.orbio.so). Little scout r
 
 The look follows the concept paintings in `assets/` (also used for the title screen, the sleep screen and dialog banners): a timber farmhouse, red barn, coin silo, a glowing Scout Station, greenhouse, a river with a waterfall, a town square with the Coin Cat fountain and the Meme Gazette shop, and a lake. Time runs from morning through a golden sunset into a lantern-lit night.
 
-- **Chatter Carrot** reads the top posts on X about a ticker (Orbio `social.x.posts` tool).
-- **Rumor Radish** searches the web for a ticker (Orbio `web.search` tool).
-- Every seed sends a **scout robot** out of the Scout Station to tend it; it carries the crate home when you harvest.
+- Every seed sends a **scout robot** out of the Scout Station. Each robot is an AI agent: a model on Orbio's gateway with a toolbox of Orbio's read tools, a step limit and a spending cap. It decides for itself what to read next, shows what it's doing in a thought bubble, and grows the answer into a crop.
+  - **Chatter Carrot:** reads X (`social.x.posts`). 3 steps, up to 2¢.
+  - **Rumor Radish:** searches and reads the web (`web.search`, `web.scrape`). 4 steps, up to 3¢.
+  - **Deep Root Daikon:** reads X and the web, and checks the token on-chain (`chain.read`: token info and recent transfers on EVM chains). 7 steps, up to 6¢, slower to grow.
+- Walk up to a growing crop to watch its robot's steps live. The harvest report shows the trail it took and its sources.
 - **The lake** is stocked each morning with the meme coins people on X are buzzing about. Cast from the dock to catch them.
 - **Town** across the bridge has townsfolk to chat with, market stalls, the Coin Cat fountain and the Meme Gazette.
 - An AI model on Orbio's gateway sums each one up as a vibe (hot / warm / meh / sus), a hype meter and any red flags.
@@ -24,6 +26,13 @@ Every picture in the game is a named slot. Drop `<slot>.png` into `assets/sprite
 - `sprites.html` shows every slot with its block guide, current art and size. The guides are also in `assets/sprite-templates/blocks/` (current art in `reference/`).
 - `assets/world.json` adds new props and buildings without code.
 - `SPRITES.md` has the style guide, sizes and image-generator prompts; `tools/prep-sprite.sh` turns a raw generated image into a game-ready sprite.
+- `SPRITE_TRACKER.md` lists every slot and whether it's painted yet, most important first. Regenerate it with `node tools/sprite-tracker.mjs`.
+
+## How the scout robots work
+
+`js/agents.js` runs a tool-calling loop on Orbio's chat gateway (OpenAI-compatible `tools`). Each turn the model either calls one of its seed's tools, which runs the matching Orbio tool with a `max_cost` cap, or writes its report as JSON. The loop stops at the seed's step limit or budget and forces a final report (`tool_choice: "none"`). Tools outside a seed's toolbox are refused. Robots only read; nothing can trade. Signed out, robots act out their steps with made-up data.
+
+`node tests/agent-loop.test.mjs` runs the loop against a simulated Orbio and checks tool choice, limits and report parsing.
 
 ## Play locally
 
@@ -56,5 +65,8 @@ Players then sign in with their own Orbio account at the mailbox (Sign in with O
 | `js/blocks.js` | Template blocks (placeholders for every slot) |
 | `assets/world.json` | Extra props and buildings placed on the map |
 | `sprites.html`, `SPRITES.md`, `assets/sprite-templates/`, `tools/prep-sprite.sh` | Making painted sprites |
-| `js/orbio.js` | Sign in with Orbio, the chat gateway and tool calls, and pretend mode |
+| `js/orbio.js` | Sign in with Orbio, the chat gateway and tool calls, and the lake's trending-coin stock |
+| `js/agents.js` | The scout robots: seeds, toolboxes and the tool-calling agent loop |
+| `tests/agent-loop.test.mjs` | Agent loop tests against a simulated Orbio |
+| `SPRITE_TRACKER.md`, `tools/sprite-tracker.mjs` | Which sprites still need art |
 | `piggy.html` | The Credit Silo's piggy bank: a calculator for how much Orbio credits would save you |
