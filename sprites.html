@@ -20,7 +20,8 @@
   .slot h2 { font: 600 22px "Pixelify Sans", sans-serif; margin: 0; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
   .tag { font: 16px VT323, monospace; border: 2px solid var(--ink); border-radius: 999px; padding: 0 8px; white-space: nowrap; }
   .tag.ok { background: var(--neon); } .tag.code { background: var(--cream-2); }
-  .pics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .pics { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .links { display: flex; gap: 8px; flex-wrap: wrap; }
   .pic { background: repeating-conic-gradient(#e9dcc0 0% 25%, #f8eedb 0% 50%) 0 0 / 16px 16px; border: 2px solid var(--wood-dark); min-height: 90px; display: grid; place-items: center; padding: 6px; position: relative; }
   .pic small { position: absolute; top: 2px; left: 6px; font-size: 15px; opacity: .7; }
   .pic canvas, .pic img { max-width: 100%; max-height: 180px; image-rendering: pixelated; margin-top: 12px; }
@@ -34,13 +35,14 @@
 <header>
   <h1>Sprite gallery</h1>
   <p>Every picture the game draws has a slot below. Drop a PNG named after the slot into <code>assets/sprites/</code>, list it in <code>assets/sprites/manifest.json</code>, and the game uses it instead of the code-drawn version. Anything you haven't painted yet keeps its code art.</p>
-  <p>Each template is the current art at the exact PNG size the game expects (2 image pixels per game pixel, so one tile = 32×32). Paint over it, keep the transparent background, and keep things standing on the bottom edge. See <code>SPRITES.md</code> for the full spec.</p>
+  <p><b>Block guide</b>: the exact PNG size, with the tile grid (32px = one tile), the footprint it stands on (solid box) and the anchor dot at the bottom centre. <b>Current art</b>: what the game draws today, for reference. Keep the transparent background and keep things standing on the bottom edge. See <code>SPRITES.md</code> for the full spec, and press <b>B</b> in the game to see the whole map as blocks.</p>
   <p class="count" id="count"></p>
 </header>
 <main id="slots"></main>
 <script type="module">
   import * as Sprites from "./js/sprites.js";
   await Sprites.loadSprites();
+  await Sprites.loadWorld();
   const main = document.getElementById("slots");
   let painted = 0;
   for (const slot of Sprites.SLOTS) {
@@ -50,14 +52,24 @@
     const has = Sprites.has(slot.name);
     if (has) painted++;
     el.innerHTML = `<h2>${slot.name}<span class="tag ${has ? "ok" : "code"}">${has ? "painted" : "code art"}</span></h2>
-      <div class="pics"><div class="pic"><small>template</small></div><div class="pic"><small>yours</small></div></div>
+      <div class="pics"><div class="pic"><small>block guide</small></div><div class="pic"><small>current art</small></div><div class="pic"><small>yours</small></div></div>
       <div class="meta">${slot.desc}<br>PNG: <code>${slot.name}.png</code> · ${Sprites.sizeLabel(slot)}${slot.night ? `<br>Optional night version: <code>${slot.name}-night.png</code> (lit windows)` : ""}</div>`;
-    const tpl = Sprites.template(slot);
-    el.querySelectorAll(".pic")[0].append(tpl);
-    if (has) el.querySelectorAll(".pic")[1].append(Sprites.get(slot.name).cloneNode());
-    const a = document.createElement("a");
-    a.className = "btn"; a.textContent = "Download template"; a.download = `${slot.name}.png`; a.href = tpl.toDataURL("image/png");
-    el.append(a);
+    const pics = el.querySelectorAll(".pic");
+    const guide = Sprites.blockTemplate(slot);
+    pics[0].append(guide);
+    const ref = slot.custom ? null : Sprites.template(slot);
+    if (ref) pics[1].append(ref); else pics[1].insertAdjacentHTML("beforeend", "<span>new slot</span>");
+    if (has) pics[2].append(Sprites.get(slot.name).cloneNode());
+    const links = document.createElement("div");
+    links.className = "links";
+    const link = (label, canvas, kind) => {
+      const a = document.createElement("a");
+      a.className = "btn"; a.textContent = label; a.download = `${slot.name}.png`; a.dataset.kind = kind; a.href = canvas.toDataURL("image/png");
+      links.append(a);
+    };
+    link("Block guide", guide, "blocks");
+    if (ref) link("Current art", ref, "reference");
+    el.append(links);
     main.append(el);
   }
   document.getElementById("count").textContent = `${painted} of ${Sprites.SLOTS.length} slots painted.`;

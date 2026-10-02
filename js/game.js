@@ -130,6 +130,22 @@ for (const [x, y, k] of [[11, 4, "pink"], [12, 5, "white"], [21, 6, "red"], [22,
   if (!owner[y][x] && walkableGround(x, y) && ground[y][x] === "g") bush(k, x, y);
 }
 
+// Extra props and buildings listed in assets/world.json (no code needed to add one).
+function placeDecor(list) {
+  for (const d of list) {
+    const fw = d.w || 1, fh = d.h || 1;
+    const [pw, ph] = d.size || [fw * 32, fh * 32];
+    let free = true;
+    for (let y = d.y; y < d.y + fh; y++) for (let x = d.x; x < d.x + fw; x++) if (!walkableGround(x, y) || owner[y]?.[x] || plotAt(x, y) >= 0) free = false;
+    if (!free) { console.warn(`world.json: "${d.name}" at (${d.x}, ${d.y}) overlaps something, skipped`); continue; }
+    const w = pw / Sprites.SCALE, h = ph / Sprites.SCALE;
+    spriteEnt("decor", d.x, d.y, fw, fh, w, h, null, {
+      name: d.name, title: d.title, say: d.say, solid: d.solid !== false,
+      lights: d.light ? [[w / 2, h * 0.35, d.light]] : null,
+    });
+  }
+}
+
 const PLOTS = [];
 for (const y of [13, 15, 17]) for (const x of [14, 16, 18, 20]) PLOTS.push([x, y]);
 const plotAt = (x, y) => PLOTS.findIndex(([px, py]) => px === x && py === y);
@@ -304,6 +320,7 @@ addEventListener("keydown", (e) => {
   if (KEYMAP[e.code]) { held.add(KEYMAP[e.code]); e.preventDefault(); }
   if ((e.code === "Space" || e.code === "KeyE" || e.code === "Enter") && !e.repeat) { e.preventDefault(); interact(); }
   if (e.code === "KeyJ") openJournal();
+  if (e.code === "KeyB") { const m = Sprites.toggleMode(); paintGround(); toast(m === "blocks" ? "Blocks view: placeholders show where every sprite goes (B to switch back)" : "Art view"); }
 });
 addEventListener("keyup", (e) => { if (KEYMAP[e.code]) held.delete(KEYMAP[e.code]); });
 addEventListener("blur", () => held.clear());
@@ -421,6 +438,7 @@ function interact() {
     const actions = {
       house: visitHouse, silo: visitSilo, station: visitStation, barn: visitBarn, greenhouse: visitGreenhouse,
       gazette: visitGazette, fountain: visitFountain, stall: visitStall, mailbox: openMailbox, board: () => openJournal(), orby: () => talkToOrby(),
+      decor: () => e.say && openDialog({ who: { name: e.title || e.name, icon: ICONS.orby }, html: `<p>${esc(e.say)}</p>` }),
     };
     if (actions[e.kind]) return actions[e.kind]();
   }
@@ -860,7 +878,7 @@ function paintGround() {
     else if (g === "k") Art.dock(px, py);
     else if (g === "w" || g === "f") Art.water(px, py, x, y, 0);
     else Art.grass(px, py, x, y);
-    if (walkableGround(x, y) && g !== "b" && g !== "k") Art.bank(px, py, isWater(x, y - 1), isWater(x, y + 1), isWater(x - 1, y), isWater(x + 1, y));
+    if (!Sprites.blocksMode() && walkableGround(x, y) && g !== "b" && g !== "k") Art.bank(px, py, isWater(x, y - 1), isWater(x, y + 1), isWater(x - 1, y), isWater(x + 1, y));
   }
   Art.useContext(prev);
 }
@@ -1066,6 +1084,7 @@ function start() {
   // Robots go back to any plots that are still growing or waiting to be picked.
   S.plots.forEach((p, i) => { if (p && p.status !== "wilted") spawnScoutBot(i, true); });
   await Sprites.loadSprites();
+  placeDecor((await Sprites.loadWorld()).decor);
   paintGround();
   fit();
   requestAnimationFrame(frame);

@@ -2,8 +2,10 @@
 
 The game draws everything with code until a painted PNG exists for it. Every picture has a **slot**. Put `<slot>.png` in `assets/sprites/`, list it in `assets/sprites/manifest.json`, and the game uses it. You can replace things one at a time; anything without a PNG keeps its code art.
 
-- **See every slot:** open `sprites.html` (served next to the game). It shows the template, your version if there is one, and the exact size.
-- **Templates:** `assets/sprite-templates/` has the current art for every slot at the right size and position. Paint over them, or use them to check proportions.
+- **See every slot:** open `sprites.html` (served next to the game). It shows the block guide, the current art, your version if there is one, and the exact size.
+- **Blocks view:** press **B** in the game (or open it with `?art=blocks`) to see the whole map as template blocks: every slot drawn as a labelled placeholder with its real footprint. Your painted sprites show up in blocks view too, so you can watch the map fill in. Press B again for the normal art.
+- **Block guides:** `assets/sprite-templates/blocks/` has a guide for every slot at the exact PNG size. Each guide shows the tile grid (32px = one tile), the footprint the thing stands on (the solid box), and the anchor dot at the bottom centre. Character sheets have one cell per frame, labelled by direction. Generate or paint to fit the guide.
+- **Current art:** `assets/sprite-templates/reference/` has what the game draws today at the same sizes, for proportions and colour reference.
 - **Raw images from an image generator:** `tools/prep-sprite.sh raw.png <slot> <WxH>` removes a flat background, trims, fits the image to the slot's size standing on the bottom edge, and adds it to the manifest. Or just send me the raw images and I'll do it.
 
 ## Style (match the concept paintings)
@@ -14,6 +16,34 @@ The game draws everything with code until a painted PNG exists for it. Every pic
 - **Density:** 2 image pixels per game pixel, so **one ground tile is 32×32**. Larger images are scaled down smoothly, so 2× or 4× the listed size is fine **as long as the proportions match**.
 - **Anchoring:** buildings, trees and props stand on the **bottom-centre** of their image, and that point sits on the bottom-centre of their footprint. Taller is fine; it just rises higher.
 - **Night versions** (optional): `<slot>-night.png` with glowing windows. Without one, the game darkens the day version and adds lantern light.
+
+## Reading a block guide
+
+- **Faded box:** the picture area. Roofs, tree canopies and anything else that rises above the ground go here.
+- **Solid box:** the footprint, the tiles it stands on and blocks the player from. The bottom of your art should sit on the bottom edge of this box.
+- **Dot at the bottom centre:** the anchor. The game lines this point up with the footprint, so you can make art taller than the guide and it will still stand in the right place.
+- **Block colours:** orange is a building, green is nature, yellow is a prop, blue is a character, lime is a crop. Ground materials are flat colour tiles.
+
+## Adding new things (no code)
+
+New props and buildings go in `assets/world.json`. Each entry gets its own sprite slot, shows up as a block until its PNG exists, and can be walked up to and inspected:
+
+```json
+{ "decor": [
+  { "name": "windmill", "title": "Windmill", "x": 8, "y": 25, "w": 2, "h": 2,
+    "size": [64, 160], "category": "building", "light": 30,
+    "say": "The windmill powers the Scout Station's chargers by night." }
+] }
+```
+
+- **Position and footprint:** `x`, `y` are the top-left tile of the footprint, and `w`, `h` are its size in tiles. Open the game in blocks view to find free tiles. An entry that overlaps something is skipped, with a warning in the browser console.
+- **`size`:** the PNG size, at 2× game pixels.
+- **`category`:** sets the block colour.
+- **`solid: false`:** lets the player walk through it.
+- **`light`:** a glow radius at night.
+- **`say`:** what it says when the player inspects it.
+
+The two entries already in the file, `well` and `windmill`, are examples: they show as blocks until you add `well.png` and `windmill.png`.
 
 ## Character sheets
 

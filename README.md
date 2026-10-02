@@ -18,7 +18,12 @@ All the in-game art is drawn in code (`js/art.js`) until painted sprites replace
 
 ## Painted sprites
 
-Every picture in the game is a named slot. Drop `<slot>.png` into `assets/sprites/` and list it in `assets/sprites/manifest.json` to replace the code art for that slot. Open `sprites.html` to see every slot, its size and a template; `SPRITES.md` has the style guide, sizes and image-generator prompts; `tools/prep-sprite.sh` turns a raw generated image into a game-ready sprite.
+Every picture in the game is a named slot. Drop `<slot>.png` into `assets/sprites/` and list it in `assets/sprites/manifest.json` to replace the code art for that slot.
+
+- Press **B** in the game (or open `?art=blocks`) for blocks view: every slot as a labelled placeholder with its real footprint.
+- `sprites.html` shows every slot with its block guide, current art and size. The guides are also in `assets/sprite-templates/blocks/` (current art in `reference/`).
+- `assets/world.json` adds new props and buildings without code.
+- `SPRITES.md` has the style guide, sizes and image-generator prompts; `tools/prep-sprite.sh` turns a raw generated image into a game-ready sprite.
 
 ## Play locally
 
@@ -27,7 +32,7 @@ python3 -m http.server 8000
 # open http://localhost:8000
 ```
 
-Controls: arrow keys or WASD to walk, Space / E to use, J for the journal, Esc to close. On phones there's an on-screen pad.
+Controls: arrow keys or WASD to walk, Space / E to use, J for the journal, B to switch between art and blocks view, Esc to close. On phones there's an on-screen pad.
 
 ## Connect it to Orbio
 
@@ -47,7 +52,9 @@ Players then sign in with their own Orbio account at the mailbox (Sign in with O
 | `assets/` | Concept paintings and the dialog banners cropped from them |
 | `js/game.js` | Map, robots, townsfolk, animals, farming, fishing, day/night lighting, save game |
 | `js/art.js` | Code-drawn pixel art (the fallback for every sprite slot) |
-| `js/sprites.js` | Sprite slots, painted-PNG loading and templates |
+| `js/sprites.js` | Sprite slots, painted-PNG loading, blocks view, `world.json` loading and templates |
+| `js/blocks.js` | Template blocks (placeholders for every slot) |
+| `assets/world.json` | Extra props and buildings placed on the map |
 | `sprites.html`, `SPRITES.md`, `assets/sprite-templates/`, `tools/prep-sprite.sh` | Making painted sprites |
 | `js/orbio.js` | Sign in with Orbio, the chat gateway and tool calls, and pretend mode |
 | `piggy.html` | The Credit Silo's piggy bank: a calculator for how much Orbio credits would save you |

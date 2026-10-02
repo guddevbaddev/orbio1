@@ -7,8 +7,25 @@
 // at the bottom-centre of their footprint, so their height can differ from the code art.
 
 import * as Art from "./art.js";
+import * as Blocks from "./blocks.js";
 
 export const SCALE = 2;
+
+// "art" shows painted sprites, falling back to code art. "blocks" shows painted sprites,
+// falling back to template blocks, so you can see the bare layout you're making art for.
+let mode = (() => {
+  try {
+    const q = new URLSearchParams(location.search).get("art");
+    if (q === "blocks" || q === "art") return q;
+    return localStorage.getItem("orbio-art-mode") === "blocks" ? "blocks" : "art";
+  } catch { return "art"; }
+})();
+export const blocksMode = () => mode === "blocks";
+export function toggleMode() {
+  mode = mode === "blocks" ? "art" : "blocks";
+  try { localStorage.setItem("orbio-art-mode", mode); } catch {}
+  return mode;
+}
 const DIR = "assets/sprites/";
 const images = new Map();
 
@@ -45,7 +62,12 @@ function blit(img, sx, sy, sw, sh, dx, dy, dw, dh, flip) {
 // A whole-image sprite whose bottom-centre sits at (ax, ay) in game pixels.
 export function drawStatic(name, ax, ay, lit) {
   const img = (lit && images.get(`${name}-night`)) || images.get(name);
-  if (!img) return false;
+  if (!img) {
+    const slot = SLOT[name];
+    if (!slot || !(blocksMode() || !slot.code)) return false;
+    // repeated scenery stays unlabelled so the map stays readable
+    return Blocks.staticBlock(name, slot.cat, ax, ay, slot.w, slot.h, slot.fw, slot.fh, !/^(fence|tree|bush|lantern)/.test(name));
+  }
   const w = img.width / SCALE, h = img.height / SCALE;
   blit(img, 0, 0, img.width, img.height, Math.round(ax - w / 2), Math.round(ay - h), w, h);
   return true;
@@ -55,7 +77,7 @@ export function drawStatic(name, ax, ay, lit) {
 // static tiles (picked per tile so the ground doesn't repeat), or animation frames.
 export function drawTile(name, x, y, pick) {
   const img = images.get(name);
-  if (!img) return false;
+  if (!img) return blocksMode() && SLOT[name] ? Blocks.tileBlock(name, x, y, pick) : false;
   const cell = img.height, n = Math.max(1, Math.floor(img.width / cell));
   const i = ((pick % n) + n) % n;
   blit(img, i * cell, 0, cell, cell, x, y, 16, 16);
@@ -67,7 +89,8 @@ export const tileFrames = (name) => { const img = images.get(name); return img ?
 // drawn with its bottom-centre at the bottom-centre of the 16×16 spot (x, y).
 export function drawSheet(name, x, y, row, col, flip) {
   const slot = SLOT[name], img = images.get(name);
-  if (!img || !slot) return false;
+  if (!slot) return false;
+  if (!img) return blocksMode() ? Blocks.sheetBlock(name, slot.cat, x, y, slot.cellW, slot.cellH, row, col) : false;
   const { cols, rows } = gridOf(slot, img);
   const cw = img.width / cols, ch = img.height / rows;
   const r = Math.min(row, rows - 1), c = Math.min(col, cols - 1);
@@ -141,7 +164,38 @@ export const SLOTS = [
   { name: "crop-chatter", kind: "sheet", cols: 4, rows: 1, cellW: 32, cellH: 32, desc: "Chatter Carrot growth stages: seeds, sprout, leafy, ripe carrot.", code: (d, f) => Art.crop(0, 0, "chatter", f, 1) },
   { name: "crop-rumor", kind: "sheet", cols: 4, rows: 1, cellW: 32, cellH: 32, desc: "Rumor Radish growth stages: seeds, sprout, leafy, ripe radish.", code: (d, f) => Art.crop(0, 0, "rumor", f, 1) },
 ];
+// Footprint (tiles the thing stands on) and category for each slot.
+const FOOT = { farmhouse: [7, 4], barn: [5, 4], silo: [2, 2], station: [2, 2], greenhouse: [6, 4], gazette: [6, 4], fountain: [3, 3] };
+for (const s of SLOTS) {
+  if (s.kind === "static") {
+    [s.fw, s.fh] = FOOT[s.name] || (s.name.startsWith("stall") ? [2, 1] : [1, 1]);
+    s.cat = s.fw > 1 || s.name.startsWith("stall") ? "building" : /^(tree|bush|sunflower)/.test(s.name) ? "nature" : "prop";
+  } else if (s.kind === "sheet") s.cat = s.name.startsWith("crop") ? "crop" : "character";
+  else s.cat = "tile";
+}
 const SLOT = Object.fromEntries(SLOTS.map((s) => [s.name, s]));
+
+// ---------------------------------------------------------------- the world file
+// assets/world.json adds new props and buildings without touching code:
+// { "decor": [ { "name": "well", "x": 26, "y": 17, "w": 1, "h": 1, "size": [32, 48],
+//                "solid": true, "light": 0, "title": "Old well", "say": "…" } ] }
+// x/y/w/h are the footprint in tiles; size is the PNG size (2× game pixels).
+export async function loadWorld() {
+  let world = { decor: [] };
+  try {
+    const res = await fetch("assets/world.json", { cache: "no-cache" });
+    if (res.ok) world = { decor: [], ...(await res.json()) };
+  } catch {}
+  for (const d of world.decor) {
+    if (!d.name || SLOT[d.name]) continue;
+    const [pw, ph] = d.size || [(d.w || 1) * 32, (d.h || 1) * 32];
+    const slot = { name: d.name, kind: "static", w: pw / SCALE, h: ph / SCALE, fw: d.w || 1, fh: d.h || 1, cat: d.category || "prop",
+      desc: `${d.title || d.name} (from assets/world.json). Footprint ${d.w || 1}×${d.h || 1} tiles at (${d.x}, ${d.y}).`, custom: true };
+    SLOTS.push(slot);
+    SLOT[d.name] = slot;
+  }
+  return world;
+}
 
 // ---------------------------------------------------------------- templates
 // Renders a slot's current code art at the target PNG size, for painting over.
@@ -184,6 +238,44 @@ export function template(slot, lit = false) {
       g.restore();
     }
   }, cw * slot.cols, ch * slot.rows));
+}
+
+// Block guide: the template block at the PNG size, with the tile grid, footprint and
+// anchor marked, and each sheet cell labelled with its direction and frame.
+export function blockTemplate(slot) {
+  const prevMode = mode;
+  mode = "blocks";
+  let c;
+  if (slot.kind === "static") {
+    c = cell(() => Blocks.staticBlock(slot.name, slot.cat, slot.w / 2, slot.h, slot.w, slot.h, slot.fw, slot.fh), slot.w, slot.h);
+  } else if (slot.kind === "tile") {
+    c = cell(() => { for (let i = 0; i < slot.n; i++) { Blocks.tileBlock(slot.name, i * 16, 0, i); Art.tinyText(String(i + 1), i * 16 + 2, 2, "#24160f"); } }, slot.n * 16, 16);
+  } else {
+    const cw = slot.cellW / SCALE, ch = slot.cellH / SCALE;
+    c = cell(() => {
+      const g = Art.getContext();
+      for (let row = 0; row < slot.rows; row++) for (let col = 0; col < slot.cols; col++) {
+        const x0 = col * cw, y0 = row * ch;
+        Blocks.sheetBlock(slot.name, slot.cat, x0 + cw / 2 - 8, y0 + ch - 16, slot.cellW, slot.cellH, slot.rows > 1 ? row : 3, col, false);
+        g.fillStyle = "rgba(36,22,15,.35)"; g.fillRect(x0, y0 + ch - 1, cw, 1); g.fillRect(x0 + cw - 1, y0, 1, ch);
+        if (slot.rows > 1 && col === 0) {
+          const t = ["DN", "UP", "LT", "RT", "CRY"][row];
+          g.fillStyle = "#fff"; g.fillRect(x0, y0, t.length * 4 + 1, 7);
+          Art.tinyText(t, x0 + 1, y0 + 1, "#24160f");
+        }
+      }
+    }, cw * slot.cols, ch * slot.rows);
+  }
+  mode = prevMode;
+  const big = upscale(c);
+  // tile grid lines every 32 PNG pixels (one game tile)
+  const g = big.getContext("2d");
+  g.fillStyle = "rgba(36,22,15,.18)";
+  if (slot.kind !== "sheet") {
+    for (let x = 32; x < big.width; x += 32) g.fillRect(x, 0, 1, big.height);
+    for (let y = big.height - 32; y > 0; y -= 32) g.fillRect(0, y, big.width, 1);
+  }
+  return big;
 }
 
 export function sizeLabel(slot) {
