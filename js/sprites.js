@@ -126,6 +126,7 @@ export const SLOTS = [
   statics("station", 32, 48, "Scout Station, the robots' charging machine. The floating coin on top is animated by the game, so leave the top ~10px empty.", (lit) => Art.stationBody(lit), true),
   statics("greenhouse", 96, 88, "Glass greenhouse with a door at the bottom centre. Footprint 6×4 tiles.", (lit) => Art.greenhouse(lit), true),
   statics("gazette", 96, 104, "The Meme Gazette shop: green roof, big shiba coin sign, door at the bottom centre. Footprint 6×4 tiles.", (lit) => Art.gazette(lit), true),
+  { ...statics("launchpad", 64, 112, "The Launchpad Tower in town: a stone tower with a glowing landing pad and a rocket on top. Footprint 4×4 tiles, door at the bottom centre.", (lit) => Art.launchpadTower(lit), true), since: "launchpad" },
   statics("fountain", 48, 72, "Town fountain with the stone cat holding a gold coin. Footprint 3×3 tiles.", () => Art.fountain()),
   statics("stall-red", 32, 40, "Market stall with a red-and-white awning and produce. Footprint 2×1 tiles.", () => Art.stall(Art.C.red)),
   statics("stall-blue", 32, 40, "Market stall, blue awning.", () => Art.stall(Art.C.overall)),
@@ -165,6 +166,8 @@ export const SLOTS = [
   { name: "robot", kind: "sheet", cols: 3, rows: 5, cellW: 32, cellH: 40, desc: "Scout robot (white body, dark visor, cyan eyes, leaf sprout). Rows: down, up, left, right, and a 5th row carrying a crate of veg.", code: (d, f, t) => Art.robot(0, 4, d === 4 ? 0 : d, 400 + f * 180, { moving: f > 0, carrying: d === 4 }) },
   { name: "robot-hat", kind: "sheet", cols: 3, rows: 5, cellW: 32, cellH: 40, desc: "Farmhand robot wearing a straw hat. Same layout as robot.", code: (d, f) => Art.robot(0, 4, d === 4 ? 0 : d, 400 + f * 180, { moving: f > 0, carrying: d === 4, hat: true }) },
   { name: "robot-night", kind: "sheet", cols: 3, rows: 4, cellW: 32, cellH: 40, since: "night-shift", desc: "Night-shift robot: the scout robot in a blue nightcap. Same layout as robot (no carrying row).", code: (d, f) => Art.robot(0, 4, d, 400 + f * 180, { moving: f > 0, nightcap: true }) },
+  { name: "robot-visitor", kind: "sheet", cols: 3, rows: 4, cellW: 32, cellH: 40, since: "launchpad", desc: "A visiting Orbio launchpad agent: a scout robot in a coloured scarf. The game floats the agent's real logo above its head. Same layout as robot.", code: (d, f) => Art.robot(0, 4, d, 400 + f * 180, { moving: f > 0, scarf: Art.C.purple }) },
+  { name: "robot-launched", kind: "sheet", cols: 3, rows: 4, cellW: 32, cellH: 40, since: "launchpad", desc: "Your own launched agent: the scout robot with a gold rocket badge. Same layout as robot.", code: (d, f) => Art.robot(0, 4, d, 400 + f * 180, { moving: f > 0, badge: true, scarf: Art.C.gold }) },
   ...[1, 2, 3, 4].map((i) => ({ name: `folk-${i}`, kind: "sheet", cols: 3, rows: 4, cellW: 32, cellH: 40, desc: `Townsperson #${i}. Same layout as farmer.`, folk: i - 1 })),
   { name: "cow", kind: "sheet", cols: 2, rows: 1, cellW: 48, cellH: 36, desc: "Cow facing right (flipped for left). Two idle/walk frames.", code: (d, f) => Art.cow(2, 2, 3, f * 400) },
   { name: "chicken", kind: "sheet", cols: 2, rows: 1, cellW: 32, cellH: 32, desc: "Chicken facing right. Frame 2 is pecking.", code: (d, f) => Art.chicken(0, 0, f ? 0 : 400, 0) },
@@ -187,6 +190,7 @@ export const SLOTS = [
   ui("exclaim", 16, 16, "The ! that pops up when a fish bites (and over Orby before you meet).", () => cell(() => Art.exclaim(0, 11))),
   ui("icon-mailbox", 16, 16, "Dialog icon for the mailbox (Sign in with Orbio).", () => cell(() => Art.getContext().drawImage(Art.mailbox(true), 0, -3))),
   ui("icon-board", 16, 16, "Dialog icon for the bulletin board (journal).", () => cell(() => Art.getContext().drawImage(Art.board(), 0, -6))),
+  { ...ui("icon-rocket", 16, 16, "A little rocket: the icon for the Launchpad Tower and its dialogs.", () => cell(() => Art.rocket(0, 0))), since: "launchpad" },
   { ...ui("icon-letter", 16, 16, "An envelope with a red seal: a night-shift letter in the mail list.", () => cell(() => Art.letter(0, 0))), since: "night-shift" },
   ui("icon-coin", 16, 16, "Dialog icon for coins: the Credit Silo, the Meme Gazette, the Coin Cat fountain.", () => cell(() => { const g = Art.getContext(); g.fillStyle = Art.C.gold2; g.beginPath(); g.arc(8, 8, 7, 0, 7); g.fill(); g.fillStyle = Art.C.gold; g.beginPath(); g.arc(8, 8, 5, 0, 7); g.fill(); })),
 
@@ -199,7 +203,7 @@ export const SLOTS = [
     portrait(`folk-${i + 1}`, `${who}, a townsperson (matches folk-${i + 1}).`, () => Art.person(0, 1, 0, 0, false, { hair, hat, shirt, pants }))),
 ];
 // Footprint (tiles the thing stands on) and category for each slot.
-const FOOT = { farmhouse: [7, 4], barn: [5, 4], silo: [2, 2], station: [2, 2], greenhouse: [6, 4], gazette: [6, 4], fountain: [3, 3] };
+const FOOT = { launchpad: [4, 4], farmhouse: [7, 4], barn: [5, 4], silo: [2, 2], station: [2, 2], greenhouse: [6, 4], gazette: [6, 4], fountain: [3, 3] };
 for (const s of SLOTS) {
   if (s.kind === "static") {
     [s.fw, s.fh] = FOOT[s.name] || (s.name.startsWith("stall") ? [2, 1] : [1, 1]);

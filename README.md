@@ -10,12 +10,13 @@ The look follows the concept paintings in `assets/` (also used for the title scr
   - **Deep Root Daikon:** reads X and the web, and checks the token on-chain (`chain.read`: token info and recent transfers on EVM chains). 7 steps, up to 6¢, slower to grow.
 - Walk up to a growing crop to watch its robot's steps live. The harvest report shows the trail it took and its sources.
 - **Night shift:** press **Watch overnight** on a harvest report (up to 3 coins). Each time you sleep, a robot in a nightcap re-checks every watched coin against its last report (X, web search and pages; 3 steps, up to 1.5¢). In the morning it walks to the mailbox and leaves a letter: what changed, hype before and after, and the trail it took. Manage the watchlist at the Scout Station; letters are also on the bulletin board.
+- **Launchpad Tower:** Orbio's agent launchpad is live on Robinhood Chain. The tower in town shows its agents (search, biggest, newest) with market cap, stake and fees, and the three biggest visit the town square wearing their logos. **Graduate a robot** prepares a launch kit for one of your scout types: token name, symbol and description for Orbio's launch form, plus the robot's instructions, tools and limits to run as a real agent. Launching happens on orbio.so with your own wallet; the game never touches wallets or tokens. Link your launched agent by ID or token address and it moves into town with a rocket badge.
 - **The lake** is stocked each morning with the meme coins people on X are buzzing about. Cast from the dock to catch them.
 - **Town** across the bridge has townsfolk to chat with, market stalls, the Coin Cat fountain and the Meme Gazette.
 - An AI model on Orbio's gateway sums each one up as a vibe (hot / warm / meh / sus), a hype meter and any red flags.
 - Harvests and fish are saved to the bulletin board (press **J**).
 
-Scouts only look. Nothing in the game buys or sells anything.
+Scouts only look. Nothing in the game buys, sells or launches anything, and it never connects to a wallet.
 
 All the in-game art is drawn in code (`js/art.js`) until painted sprites replace it. There's no build step and no dependencies.
 
@@ -36,6 +37,10 @@ Every picture in the game is a named slot. Drop `<slot>.png` into `assets/sprite
 The night shift uses the same loop (`runNightCheck`) with the coin's last report in its instructions, and answers with a headline and an up/down/same change.
 
 `node tests/agent-loop.test.mjs` runs the loop against a simulated Orbio and checks tool choice, limits and report parsing.
+
+## Launchpad data
+
+Orbio's launchpad API (`/api/protocol/agents`) is public but doesn't allow browser reads from other sites, so the game reads a snapshot, `assets/launchpad.json`, saved by `node tools/fetch-launchpad.mjs`. It still tries the live API in the background in case that changes. `.github/workflows/launchpad-snapshot.yml` refreshes the snapshot daily once this is on the default branch (or run it by hand from the Actions tab). `node tests/launchpad.test.mjs` checks loading, search, formatting and the launch kit.
 
 ## Play locally
 
@@ -70,6 +75,8 @@ Players then sign in with their own Orbio account at the mailbox (Sign in with O
 | `sprites.html`, `SPRITES.md`, `assets/sprite-templates/`, `tools/prep-sprite.sh` | Making painted sprites |
 | `js/orbio.js` | Sign in with Orbio, the chat gateway and tool calls, and the lake's trending-coin stock |
 | `js/agents.js` | The scout robots: seeds, toolboxes and the tool-calling agent loop |
-| `tests/agent-loop.test.mjs` | Agent loop tests against a simulated Orbio |
+| `js/launchpad.js` | Orbio launchpad directory, number formatting and the launch kit |
+| `assets/launchpad.json`, `tools/fetch-launchpad.mjs` | Launchpad snapshot and the script that refreshes it |
+| `tests/agent-loop.test.mjs`, `tests/launchpad.test.mjs` | Tests: agent loop against a simulated Orbio; launchpad module against the snapshot |
 | `SPRITE_TRACKER.md`, `tools/sprite-tracker.mjs` | Which sprites still need art |
 | `piggy.html` | The Credit Silo's piggy bank: a calculator for how much Orbio credits would save you |

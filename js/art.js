@@ -500,6 +500,9 @@ export function robot(x, y, dir, t, opts = {}) {
     const wave = opts.busy ? Math.floor(t / 150) % 2 : 0;
     r(x + 2, y + 9 - wave, 2, 3, C.robot2); r(x + 12, y + 9 + wave - (opts.busy ? 1 : 0), 2, 3, C.robot2);
   }
+  // visiting launchpad agents wear a coloured scarf; your launched agent wears a rocket badge
+  if (opts.scarf) { r(x + 3, y + 9, 10, 2, opts.scarf); if (dir !== 1) r(x + 9, y + 11, 2, 3, opts.scarf); }
+  if (opts.badge) { r(x + 6, y + 10, 4, 3, C.gold2); r(x + 7, y + 10, 2, 2, C.goldHi); }
   // sprout, straw hat or (night shift) a nightcap
   if (opts.nightcap) { r(x + 3, y, 10, 2, C.overall2); r(x + 4, y - 2, 8, 2, C.overall); r(x + 8, y - 4, 4, 2, C.overall); r(x + 12, y - 5, 2, 2, C.white); r(x + 3, y + 1, 10, 1, C.white); }
   else if (opts.hat) { r(x + 1, y + 1, 14, 1, C.straw2); r(x + 4, y - 2, 8, 3, C.straw); r(x + 4, y, 8, 1, C.red); }
@@ -562,6 +565,36 @@ export function bubble(x, y, icon, t) {
   else if (icon === "done") { for (let i = 0; i < 3; i++) p(x + 4 + i, y + 6 + i, C.leaf); for (let i = 0; i < 5; i++) p(x + 7 + i, y + 8 - i, C.leaf); }
   else for (let i = 0; i < 3; i++) r(x + 4 + i * 3, y + 6 - (i === ph ? 1 : 0), 2, 2, C.ink);
 }
+
+// A little rocket: the launchpad's icon.
+export function rocket(x, y) {
+  r(x + 6, y + 2, 4, 9, C.white); r(x + 7, y + 1, 2, 1, C.white); r(x + 6, y + 2, 1, 9, C.robot2);
+  r(x + 7, y + 4, 2, 2, C.cyan); r(x + 4, y + 8, 2, 4, C.red); r(x + 10, y + 8, 2, 4, C.red);
+  r(x + 7, y + 11, 2, 2, C.orange); r(x + 7, y + 13, 2, 2, C.gold);
+}
+
+// The Launchpad Tower: a stone tower with a glowing landing pad on top, where your
+// robots can "graduate" into Orbio launchpad agents.
+export const launchpadTower = (lit) => cached(`launchpad-${lit}`, 64, 112, () => {
+  shadow(32, 108, 30, 4);
+  // stone tower
+  r(10, 44, 44, 64, C.rock2); r(12, 44, 40, 62, C.rock);
+  for (let row = 0; row < 15; row++) for (let col = 0; col < 5; col++) r(12 + col * 8 + (row % 2) * 4, 46 + row * 4, 7, 1, C.rock2);
+  r(12, 44, 40, 2, C.rockHi);
+  // arched door
+  ellipse(32, 88, 8, 6, C.woodDark); r(24, 88, 16, 18, C.woodDark); ellipse(32, 89, 7, 5, lit ? C.glow2 : C.wood); r(25, 89, 14, 17, lit ? C.glow2 : C.wood); r(36, 96, 2, 2, C.gold);
+  // windows and a banner
+  window(16, 60, 8, 10, lit); window(40, 60, 8, 10, lit);
+  r(28, 50, 8, 26, C.overall2); r(29, 50, 6, 24, C.overall); tri(32, 74, 8, 4, C.overall2);
+  ellipse(32, 58, 3, 3, C.neon);
+  // landing pad deck
+  ellipse(32, 40, 30, 8, C.metal2); ellipse(32, 39, 28, 7, C.metal); ellipse(32, 39, 20, 5, C.ink); ellipse(32, 39, 18, 4, lit ? C.neon : C.neon2);
+  ellipse(32, 39, 12, 3, C.metal); r(2, 40, 2, 6, C.metal2); r(60, 40, 2, 6, C.metal2);
+  // a rocket waiting on the pad
+  r(28, 10, 8, 26, C.white); ellipse(32, 10, 4, 6, C.white); r(28, 12, 2, 24, C.robot2);
+  r(30, 16, 4, 4, C.ink); r(31, 17, 2, 2, C.cyan);
+  tri(25, 26, 6, 10, C.red); tri(39, 26, 6, 10, C.red); r(30, 36, 4, 2, C.orange);
+});
 
 // An envelope from the night shift, for the mail list.
 export function letter(x, y) {

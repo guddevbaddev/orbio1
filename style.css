@@ -105,6 +105,17 @@ a { color: inherit; }
 .change { border: 2px solid var(--ink); border-radius: 999px; padding: 0 8px; font-size: 18px; background: #dcd6c8; }
 .change.up { background: #b8f08a; } .change.down { background: #ffb3a3; }
 .card.letter.unread { box-shadow: 0 0 0 3px var(--neon); }
+.agent-logo { width: 28px; height: 28px; border-radius: 6px; border: 2px solid var(--ink); object-fit: cover; background: var(--cream-2); }
+#dialog .who img.agent-logo { width: 40px; height: 40px; }
+.card.agent.mine { box-shadow: 0 0 0 3px var(--gold); }
+.stats { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 17px; margin: 4px 0; }
+.lp-controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+.lp-controls input, .grad input, .grad select, #linkInput { font: inherit; background: #fff; border: 3px solid var(--wood-dark); border-radius: 4px; padding: 2px 8px; }
+.lp-controls input { flex: 1; min-width: 160px; }
+.lp-controls .btn[aria-pressed=true] { background: var(--neon); }
+.grad { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.grad label { display: grid; gap: 2px; font-size: 17px; }
+pre.kit { background: #fff; border: 3px solid var(--wood-dark); border-radius: 6px; padding: 8px; font: 15px/1.25 ui-monospace, monospace; max-height: 180px; overflow: auto; white-space: pre-wrap; }
 .how summary { cursor: pointer; font-size: 18px; margin-top: 4px; }
 .log { background: #fff; border: 3px solid var(--wood-dark); border-radius: 6px; padding: 4px 10px; min-height: 40px; }
 

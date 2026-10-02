@@ -2,6 +2,7 @@ import * as Art from "./art.js";
 import * as Orbio from "./orbio.js";
 import * as Sprites from "./sprites.js";
 import * as Agents from "./agents.js";
+import * as Launchpad from "./launchpad.js";
 
 const { T, C } = Art;
 const VIEW_W = 384, VIEW_H = 224; // game pixels; the canvas is 2× this for detail
@@ -95,6 +96,7 @@ B.station = spriteEnt("station", 14, 6, 2, 2, 32, 48, null, {
 B.barn = spriteEnt("barn", 2, 11, 5, 4, 80, 96, (lit) => Art.barn(lit), { lights: [[40, 28, 26], [40, 80, 34]] });
 B.greenhouse = spriteEnt("greenhouse", 24, 11, 6, 4, 96, 88, (lit) => Art.greenhouse(lit), { lights: [[48, 60, 56]] });
 B.gazette = spriteEnt("gazette", 40, 4, 6, 4, 96, 104, (lit) => Art.gazette(lit), { lights: [[48, 18, 36], [19, 76, 30], [77, 76, 30], [48, 86, 30]] });
+B.launchpad = spriteEnt("launchpad", 34, 3, 4, 4, 64, 112, (lit) => Art.launchpadTower(lit), { lights: [[32, 38, 44], [32, 92, 26], [20, 65, 16], [44, 65, 16]] });
 B.fountain = spriteEnt("fountain", 38, 11, 3, 3, 48, 72, () => Art.fountain(), { after: (e, t) => Art.fountainWater(e.x, e.y, t), lights: [[24, 27, 24]] });
 const STALL_COLORS = [C.red, C.overall, C.roofGreen, C.orange];
 const STALL_NAMES = ["stall-red", "stall-blue", "stall-green", "stall-orange"];
@@ -109,7 +111,7 @@ mailbox.draw = (t) => {
 const unreadMail = () => (S.mail || []).filter((m) => !m.read).length;
 spriteEnt("board", 17, 7, 1, 1, 16, 24, () => Art.board());
 for (const [x, y] of [[8, 10], [9, 10], [1, 9]]) spriteEnt("crate", x, y, 1, 1, 16, 16, () => Art.crate());
-for (const [x, y] of [[3, 7], [12, 7], [36, 7], [33, 17]]) spriteEnt("barrel", x, y, 1, 1, 16, 18, () => Art.barrel());
+for (const [x, y] of [[3, 7], [12, 7], [33, 5], [33, 17]]) spriteEnt("barrel", x, y, 1, 1, 16, 18, () => Art.barrel());
 for (const [x, y] of [[7, 15], [8, 15], [9, 13]]) spriteEnt("hay", x, y, 1, 1, 16, 14, () => Art.hay());
 
 // lanterns
@@ -131,7 +133,7 @@ for (let y = 1; y < MAP_H - 1; y++) { if (y !== 8) { tree("pine", 0, y); if (!is
 for (let x = 1; x < 28; x += 2) if (x < 3 || x > 12) tree(x % 4 === 1 ? "pine" : "round", x, 1);
 for (const [x, y] of [[34, 1], [36, 2], [38, 1], [40, 2], [42, 1], [44, 2], [46, 1]]) tree("pine", x, y);
 for (const [x, y] of [[13, 22], [17, 25], [11, 26], [20, 27], [15, 27], [25, 25], [6, 24], [26, 20], [3, 23]]) tree("apple", x, y);
-for (const [x, y] of [[24, 6], [35, 4], [19, 3], [27, 4]]) tree("cherry", x, y);
+for (const [x, y] of [[24, 6], [19, 3], [27, 4]]) tree("cherry", x, y);
 for (const [x, y] of [[2, 26], [4, 27], [8, 28], [1, 21], [12, 3], [25, 2]]) tree("pine", x, y);
 for (const [x, y, k] of [[11, 4, "pink"], [12, 5, "white"], [21, 6, "red"], [22, 7, "purple"], [34, 8 - 1, "pink"], [39, 7, "white"], [26, 7, "pink"], [33, 18, "red"], [36, 18, "white"], [46, 17, "purple"], [9, 22, "white"], [26, 9 + 1, "pink"]]) {
   if (!owner[y][x] && walkableGround(x, y) && ground[y][x] === "g") bush(k, x, y);
@@ -170,6 +172,7 @@ const fresh = () => ({
   day: 1, minutes: 0, plots: PLOTS.map(() => null), journal: [], fishLog: [],
   pond: [], pondDay: 0, spent: 0, px: 7 * T, py: 8 * T, dir: 0, metOrby: false,
   watch: [], mail: [], // coins the night shift re-checks, and the letters it leaves
+  myAgent: null,       // { id } of the player's own launchpad agent, once linked
 });
 let S = fresh();
 
@@ -283,7 +286,7 @@ const folks = LOOKS.map((look, i) => ({ look, name: QUOTES[i][0], x: FOLK_START[
 const TOWN = { x0: 33, y0: 9, x1: 46, y1: 18 };
 
 function updateFolks(dt) {
-  for (const f of folks) {
+  for (const f of [...folks, ...visitors]) {
     f.t -= dt;
     if (f.t <= 0) {
       f.t = rand(900, 2600);
@@ -300,6 +303,32 @@ function updateFolks(dt) {
   }
 }
 const nearPlayer = (x, y) => Math.abs(x - player.x) < 12 && Math.abs(y - player.y) < 10;
+
+// Real agents from Orbio's launchpad visiting the town square, with their logos.
+const visitors = [];
+const VISITOR_SPOTS = [[36, 9], [43, 10], [39, 16]];
+const SCARVES = [C.purple, C.sky, C.pink];
+function seatVisitors(dir) {
+  Launchpad.list(dir, { sort: "cap", limit: 3 }).forEach((agent, i) => visitors.push({
+    agent, x: VISITOR_SPOTS[i][0] * T, y: VISITOR_SPOTS[i][1] * T, dir: 0, frame: 0, animT: 0, moving: false, t: 0, dx: 0, dy: 0, scarf: SCARVES[i], seed: i + 11,
+  }));
+}
+// Your own launched agent stands proudly by the tower.
+const myAgentSpot = { x: 38 * T, y: 7 * T, dir: 0, badge: true, scarf: C.gold, seed: 21 };
+let myAgentInfo = null;
+
+const logoCache = new Map();
+function logoImg(url) {
+  if (!url) return null;
+  let img = logoCache.get(url);
+  if (!img) {
+    img = new Image();
+    img.referrerPolicy = "no-referrer";
+    img.src = url;
+    logoCache.set(url, img);
+  }
+  return img.complete && img.naturalWidth ? img : null;
+}
 
 // Animals in the pen.
 const animals = [
@@ -374,6 +403,13 @@ const ICONS = {
   fish: (rarity) => () => Sprites.uiImage(`fish-${rarity}`),
   mail: () => Sprites.uiImage("icon-mailbox"),
   letter: () => Sprites.uiImage("icon-letter"),
+  rocket: () => Sprites.uiImage("icon-rocket"),
+  logo: (agent) => () => {
+    const img = document.createElement("img");
+    img.src = agent.logo || ""; img.alt = ""; img.referrerPolicy = "no-referrer"; img.className = "agent-logo";
+    img.onerror = () => img.replaceWith(Sprites.uiImage("icon-rocket"));
+    return img;
+  },
   board: () => Sprites.uiImage("icon-board"),
   coin: () => Sprites.uiImage("icon-coin"),
 };
@@ -436,19 +472,23 @@ const standingTile = () => [Math.floor((player.x + 8) / T), Math.floor((player.y
 
 function personAt(x, y) {
   const cx = x * T + 8, cy = y * T + 8;
-  return folks.find((f) => Math.abs(f.x + 8 - cx) < 14 && Math.abs(f.y + 10 - cy) < 14);
+  const near = (f) => Math.abs(f.x + 8 - cx) < 14 && Math.abs(f.y + 10 - cy) < 14;
+  return folks.find(near) || visitors.find(near) || (myAgentInfo && near(myAgentSpot) ? myAgentSpot : null);
 }
 
 function interact() {
   if (fishing) return reelIn();
   const [fx, fy] = facingTile();
   const folk = personAt(fx, fy);
+  if (folk?.agent) return showAgent(folk.agent, false);
+  if (folk === myAgentSpot) return showAgent(myAgentInfo, true);
   if (folk) return chat(folk);
   const e = inMap(fx, fy) ? owner[fy][fx] : null;
   if (e) {
     const actions = {
       house: visitHouse, silo: visitSilo, station: visitStation, barn: visitBarn, greenhouse: visitGreenhouse,
       gazette: visitGazette, fountain: visitFountain, stall: visitStall, mailbox: openMailbox, board: () => openJournal(), orby: () => talkToOrby(),
+      launchpad: () => openLaunchpad(),
       decor: () => e.say && openDialog({ who: { name: e.title || e.name, icon: ICONS.orby }, html: `<p>${esc(e.say)}</p>` }),
     };
     if (actions[e.kind]) return actions[e.kind]();
@@ -467,6 +507,7 @@ const TIPS = [
   "Head into the fenced field and press <b>Space</b> (or <b>A</b>) on an empty patch of soil. Pick a seed, give it a ticker like <b>$PEPE</b>, and a robot will tend it.",
   "Each robot is a little AI agent: it decides for itself what to read next. <b>Chatter Carrots</b> dig through X, <b>Rumor Radishes</b> search and read the web, and <b>Deep Root Daikons</b> do both and check the blockchain too. Walk up to a growing crop to see what its robot is doing.",
   "Like a coin you harvested? Press <b>Watch overnight</b> on its report. While you sleep a night-shift robot re-checks it, and in the morning it leaves a letter in the mailbox saying what changed.",
+  "Up in town, the <b>Launchpad Tower</b> shows real agents from Orbio's launchpad (a few are visiting the square, wearing their logos). It can also prepare one of your scouts to launch as an agent of its own.",
   "Walk down to the lake dock and cast a line to catch whatever coins are trending today. Rarer fish means more hype. The lake restocks every morning.",
   "Everything runs on <b>Orbio</b>: one balance pays for the AI model <i>and</i> the X and web reads. Check the mailbox to sign in, and the silo to see your spending.",
   "Over the bridge is town. Folks there love to gossip about coins. Remember: scouts only look. Hype isn't value, and lots of these coins are rugs!",
@@ -878,6 +919,130 @@ function hookCardButtons(d, reopen) {
   d.querySelectorAll("[data-unwatch]").forEach((b) => b.addEventListener("click", () => { unwatch(b.dataset.unwatch); reopen(); }));
 }
 
+// --- the launchpad
+// Orbio's agent launchpad is live on Robinhood Chain. The tower shows its agents, helps
+// you prepare one of your scouts as a launchpad agent, and links it once you've launched
+// it on orbio.so. The game never touches wallets or tokens.
+
+let launchDir = null;
+const lpState = { sort: "cap", q: "" };
+
+function agentCard(a, mine = false) {
+  if (!a) return `<p class="hint">Couldn't find that agent in the launchpad data.</p>`;
+  const o = launchDir?.orbioMicroUsd;
+  const links = [
+    a.website && `<a href="${esc(a.website)}" target="_blank" rel="noopener">website</a>`,
+    a.twitter && `<a href="${esc(a.twitter)}" target="_blank" rel="noopener">X</a>`,
+    a.explorer && `<a href="${esc(a.explorer)}" target="_blank" rel="noopener">explorer</a>`,
+  ].filter(Boolean);
+  return `<div class="card agent${mine ? " mine" : ""}">
+    <div class="head"><img class="agent-logo" src="${esc(a.logo || "")}" alt="" referrerpolicy="no-referrer" loading="lazy" onerror="this.style.visibility='hidden'">
+      <span class="ticker">${esc(a.name)}</span><span class="vibe warm">$${esc(a.symbol)}</span>
+      ${a.graduated ? `<span class="vibe common">graduated</span>` : a.progressBps != null ? `<span class="vibe common">curve ${Math.round(a.progressBps / 100)}%</span>` : ""}
+      ${mine ? `<span class="vibe legendary">yours</span>` : ""}</div>
+    <div class="stats"><span>Market cap <b>${Launchpad.usd(a.marketCapMicroUsd)}</b></span><span>Staked <b>${Launchpad.orbioUsd(a.stakedWei, o)}</b></span><span>Fees earned <b>${Launchpad.orbioUsd(a.feesWei, o)}</b></span><span>Launched <b>${Launchpad.age(a.launchedAt)}</b></span></div>
+    ${a.description ? `<p>${esc(a.description)}</p>` : ""}
+    <div class="meta">Agent #${esc(a.id)}${links.length ? ` · ${links.join(" · ")}` : ""}</div>
+  </div>`;
+}
+
+function sourceNote() {
+  if (!launchDir || launchDir.source === "none") return `<p class="hint">Couldn't load the launchpad. Check <a href="${Launchpad.LAUNCHPAD_URL}" target="_blank" rel="noopener">orbio.so/launchpad</a>.</p>`;
+  return launchDir.source === "live"
+    ? `<p class="hint">Live from Orbio's launchpad.</p>`
+    : `<p class="hint">Orbio launchpad snapshot from ${esc(new Date(launchDir.fetchedAt).toLocaleString())} (${launchDir.totals?.agents ?? launchDir.agents.length} agents). Not financial advice; numbers move fast.</p>`;
+}
+
+async function openLaunchpad(tab = "agents") {
+  launchDir ||= await Launchpad.loadDirectory();
+  const tabs = `<div class="tabs">
+      <button class="btn" data-lp="agents" aria-pressed="${tab === "agents"}">🤖 Agents</button>
+      <button class="btn" data-lp="graduate" aria-pressed="${tab === "graduate"}">🎓 Graduate a robot</button>
+      <button class="btn" data-lp="mine" aria-pressed="${tab === "mine"}">🚀 My agent</button>
+    </div>`;
+  let body = "";
+  if (tab === "agents") {
+    body = `<p>Orbio's launchpad turns agents into projects with their own token. Trading fees fund the agent: some are staked, some become $CREDIT, some become AI balance it can spend on work like your robots do.</p>
+      <div class="lp-controls"><input type="text" id="lpSearch" placeholder="Search name or $SYMBOL" value="${esc(lpState.q)}" aria-label="Search agents">
+        <button class="btn small" data-sort="cap" aria-pressed="${lpState.sort === "cap"}">Biggest</button><button class="btn small" data-sort="newest" aria-pressed="${lpState.sort === "newest"}">Newest</button></div>
+      <div id="lpList"></div>${sourceNote()}`;
+  } else if (tab === "graduate") {
+    const fee = launchDir?.terms?.launchFeeWei ? Launchpad.eth(launchDir.terms.launchFeeWei) : "a small ETH fee";
+    body = `<p>Ready for one of your scouts to go pro? This prepares a <b>launch kit</b>: the token details for Orbio's launch form, and your robot's job (its instructions, tools and limits) to run as a real agent.</p>
+      <div class="grad">
+        <label>Scout type <select id="gSeed">${Object.entries(SEEDS).map(([k, sd]) => `<option value="${k}">${esc(sd.name)}</option>`).join("")}</select></label>
+        <label>Agent name <input type="text" id="gName" maxlength="32" value="${esc(S.farmName || "Valley")} Scout"></label>
+        <label>Symbol <input type="text" id="gSymbol" maxlength="10" value="SCOUT"></label>
+      </div>
+      <pre class="kit" id="gKit"></pre>
+      <p class="hint">Launching is done on orbio.so with your own wallet on Robinhood Chain: it creates a real token and costs ${esc(fee)} plus gas. Orbio Valley never connects to your wallet. Running the agent for real needs a server with the agent's gateway key.</p>`;
+  } else {
+    const mine = S.myAgent && Launchpad.find(launchDir, S.myAgent.id);
+    body = mine
+      ? `${agentCard(mine, true)}<p class="hint">Your agent stands by the tower in town, wearing its rocket badge.</p><button class="btn small" id="unlinkAgent">Unlink</button>`
+      : `<p>Launched an agent on Orbio? Link it with its agent ID (like <b>106</b>) or token address and it'll come and live in your town.</p>
+         <input type="text" id="linkInput" placeholder="Agent ID or 0x… token address" aria-label="Agent ID or token address">
+         <button class="btn small" id="linkAgent">Link agent</button><p class="hint" id="linkHint"></p>`;
+  }
+  const buttons = tab === "graduate"
+    ? [{ label: "Download kit", primary: true, keepOpen: true, onClick: () => downloadKit() }, { label: "Open Orbio launch form", keepOpen: true, onClick: () => open(Launchpad.LAUNCH_URL, "_blank", "noopener") }, { label: "Close" }]
+    : [{ label: "Close", primary: true }, { label: "Visit orbio.so/launchpad", onClick: () => open(Launchpad.LAUNCHPAD_URL, "_blank", "noopener") }];
+  openDialog({
+    who: { name: "Launchpad Tower", icon: ICONS.rocket },
+    html: tabs + body,
+    buttons,
+    onOpen: (d) => {
+      d.querySelectorAll("[data-lp]").forEach((b) => b.addEventListener("click", () => openLaunchpad(b.dataset.lp)));
+      if (tab === "agents") {
+        const render = () => { d.querySelector("#lpList").innerHTML = Launchpad.list(launchDir, { sort: lpState.sort, q: lpState.q, limit: 25 }).map((a) => agentCard(a, a.id === S.myAgent?.id)).join("") || `<p class="empty">No agents match.</p>`; };
+        d.querySelector("#lpSearch").addEventListener("input", (e) => { lpState.q = e.target.value; render(); });
+        d.querySelectorAll("[data-sort]").forEach((b) => b.addEventListener("click", () => { lpState.sort = b.dataset.sort; openLaunchpad("agents"); }));
+        render();
+      } else if (tab === "graduate") {
+        const update = () => { d.querySelector("#gKit").textContent = JSON.stringify(currentKit(d), null, 2); };
+        d.querySelectorAll("#gSeed, #gName, #gSymbol").forEach((el) => el.addEventListener("input", update));
+        update();
+      } else if (d.querySelector("#linkAgent")) {
+        d.querySelector("#linkAgent").addEventListener("click", () => {
+          const a = Launchpad.find(launchDir, d.querySelector("#linkInput").value);
+          if (!a) { d.querySelector("#linkHint").textContent = launchDir.source === "snapshot" ? "Not found. Brand-new agents appear after the next launchpad snapshot." : "Not found on the launchpad."; return; }
+          S.myAgent = { id: a.id };
+          myAgentInfo = a;
+          save();
+          toast(`🚀 ${a.name} ($${a.symbol}) moved into town!`, 3200);
+          openLaunchpad("mine");
+        });
+      } else {
+        d.querySelector("#unlinkAgent")?.addEventListener("click", () => { S.myAgent = null; myAgentInfo = null; save(); openLaunchpad("mine"); });
+      }
+    },
+  });
+}
+
+function currentKit(d) {
+  return Launchpad.launchKit({
+    seedKind: d.querySelector("#gSeed").value,
+    name: d.querySelector("#gName").value.trim() || "Valley Scout",
+    symbol: d.querySelector("#gSymbol").value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10) || "SCOUT",
+  });
+}
+function downloadKit() {
+  const kit = currentKit($("dialog"));
+  const url = URL.createObjectURL(new Blob([JSON.stringify(kit, null, 2)], { type: "application/json" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: `${kit.token.symbol.toLowerCase()}-agent-kit.json` });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast("📦 Launch kit downloaded");
+}
+
+function showAgent(a, mine) {
+  openDialog({
+    who: { name: mine ? "Your launchpad agent" : "A visitor from the launchpad", icon: ICONS.logo(a) },
+    html: `${mine ? "" : `<p>"Hi! I'm one of Orbio's launchpad agents, visiting from Robinhood Chain."</p>`}${agentCard(a, mine)}${sourceNote()}`,
+    buttons: [{ label: "Nice to meet you", primary: true }, { label: "Launchpad Tower", onClick: () => setTimeout(() => openLaunchpad(mine ? "mine" : "agents"), 0) }],
+  });
+}
+
 // --- fishing
 
 const RARITY = (h) => (h >= 85 ? "legendary" : h >= 60 ? "rare" : h >= 30 ? "uncommon" : "common");
@@ -1012,7 +1177,8 @@ function boxFree(nx, ny) {
 function tryMove(dx, dy) {
   const nx = player.x + dx, ny = player.y + dy;
   if (!boxFree(nx, ny)) return;
-  if (folks.some((f) => Math.abs(f.x - nx) < 9 && Math.abs(f.y - ny) < 6)) return;
+  if ([...folks, ...visitors].some((f) => Math.abs(f.x - nx) < 9 && Math.abs(f.y - ny) < 6)) return;
+  if (myAgentInfo && Math.abs(myAgentSpot.x - nx) < 9 && Math.abs(myAgentSpot.y - ny) < 6) return;
   player.x = nx; player.y = ny;
 }
 
@@ -1085,6 +1251,25 @@ function drawRobot(b, now) {
     if (!Sprites.drawStatic(`bubble-${icon}`, x + 8, by + 16)) Art.bubble(x, by, icon, now);
   }
 }
+// A launchpad agent: robot sprite (painted, block or code), with its real logo above.
+function drawAgentBot(b, slot, agent, now) {
+  const x = Math.round(b.x), y = Math.round(b.y);
+  const name = Sprites.has(slot) || Sprites.blocksMode() || !Sprites.has("robot") ? slot : "robot";
+  const col = b.moving ? 1 + (b.frame || 0) : 0;
+  if (!Sprites.drawSheet(name, x, y, b.dir, col)) Art.robot(x, y, b.dir, now, b);
+  const bob = Math.round(Math.sin(now / 400 + (b.seed || 0)));
+  const img = logoImg(agent?.logo);
+  ctx.fillStyle = C.ink; ctx.fillRect(x + 2, y - 15 + bob, 12, 12);
+  if (img) ctx.drawImage(img, x + 3, y - 14 + bob, 10, 10);
+  else { ctx.fillStyle = C.neon; ctx.fillRect(x + 3, y - 14 + bob, 10, 10); }
+  if (Math.abs(player.x - b.x) < 40 && Math.abs(player.y - b.y) < 32) {
+    const label = `$${agent?.symbol || "?"}`.toUpperCase().replace(/[^A-Z0-9$]/g, "").slice(0, 10).replace("$", "");
+    const w = label.length * 4 + 3;
+    ctx.fillStyle = "rgba(255,255,255,.85)"; ctx.fillRect(x + 8 - w / 2, y - 23 + bob, w, 7);
+    Art.tinyText(label, Math.round(x + 8 - w / 2) + 2, y - 22 + bob, C.ink);
+  }
+}
+
 function drawAnimal(a, now) {
   const x = Math.round(a.x), y = Math.round(a.y), flip = a.dir === 2;
   const col = Math.floor(now / 500 + a.seed) % 2;
@@ -1141,6 +1326,8 @@ function draw(now) {
   list.push({ y: player.y + 16, draw: () => drawWalker("farmer", player, S.dir, () => Art.person(Math.round(player.x), Math.round(player.y), S.dir, player.frame, player.moving)) });
   for (const b of [...bots, ...ambient]) list.push({ y: b.y + 16, draw: () => drawRobot(b, now) });
   folks.forEach((f, i) => list.push({ y: f.y + 16, draw: () => drawWalker(`folk-${i + 1}`, f, f.dir, () => Art.person(Math.round(f.x), Math.round(f.y), f.dir, f.frame, f.moving, f.look)) }));
+  for (const v of visitors) list.push({ y: v.y + 16, draw: () => drawAgentBot(v, "robot-visitor", v.agent, now) });
+  if (myAgentInfo) list.push({ y: myAgentSpot.y + 16, draw: () => drawAgentBot(myAgentSpot, "robot-launched", myAgentInfo, now) });
   for (const a of animals) list.push({ y: a.y + 16, draw: () => drawAnimal(a, now) });
   list.sort((a, b) => a.y - b.y);
   for (const it of list) it.draw();
@@ -1264,6 +1451,18 @@ function start() {
   S.plots.forEach((p, i) => { if (p && p.status !== "wilted") spawnScoutBot(i, true); });
   await Sprites.loadSprites();
   placeDecor((await Sprites.loadWorld()).decor);
+  Launchpad.loadDirectory().then((d) => {
+    launchDir = d;
+    seatVisitors(d);
+    if (S.myAgent) myAgentInfo = Launchpad.find(d, S.myAgent.id);
+    // fresher numbers if Orbio's live API ever allows browser reads
+    Launchpad.tryLive().then((live) => {
+      if (!live) return;
+      launchDir = live;
+      for (const v of visitors) v.agent = Launchpad.find(live, v.agent.id) || v.agent;
+      if (S.myAgent) myAgentInfo = Launchpad.find(live, S.myAgent.id) || myAgentInfo;
+    });
+  });
   paintGround();
   fit();
   requestAnimationFrame(frame);
