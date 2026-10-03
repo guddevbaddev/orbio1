@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orby's Piggy Bank</title>
+<meta name="description" content="See how much you'd save on your AI bill by routing it through Orbio's discounted credits. Live model prices, one slider, zero signup.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=JetBrains+Mono:wght@500&family=Nunito:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fbf8ef;
+    --card: #ffffff;
+    --ink: #141413;
+    --ink-2: #4a4a45;
+    --ink-3: #8a8a82;
+    --line: #e9e4d3;
+    --neon: #d4ff3f;
+    --neon-deep: #436021;
+    --pink: #ff9ec7;
+    --sky: #9fd8ff;
+    --shadow: 0 2px 0 var(--ink);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141413; --card: #1f1f1d; --ink: #f6f3e8; --ink-2: #c9c6ba; --ink-3: #8d8b82;
+      --line: #34332f; --neon-deep: #d4ff3f;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141413; --card: #1f1f1d; --ink: #f6f3e8; --ink-2: #c9c6ba; --ink-3: #8d8b82;
+    --line: #34332f; --neon-deep: #d4ff3f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 500 17px/1.5 Nunito, system-ui, sans-serif;
+    overflow-x: hidden;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 16px; }
+  h1, h2, h3, .display { font-family: Fredoka, Nunito, sans-serif; letter-spacing: -0.01em; }
+  a { color: inherit; }
+
+  /* top bar */
+  .bar { display: flex; align-items: center; justify-content: space-between; padding: 18px 0; }
+  .brand { display: flex; align-items: center; gap: 10px; font: 700 20px Fredoka, sans-serif; text-decoration: none; }
+  .brand svg { width: 34px; height: 34px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 2px solid var(--ink); border-radius: 999px; padding: 4px 12px;
+    font: 600 14px Fredoka, sans-serif; text-decoration: none; background: var(--card);
+  }
+  .pill .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--neon); border: 1.5px solid #141413; }
+
+  /* hero */
+  .hero { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 24px; align-items: center; padding: 28px 0 8px; }
+  .hero h1 { font-size: clamp(38px, 7vw, 68px); line-height: 1.02; margin: 0 0 14px; }
+  .hero h1 .hl { background: var(--neon); color: #141413; padding: 0 10px; border-radius: 14px; display: inline-block; transform: rotate(-2deg); }
+  .hero p.lede { font-size: 20px; color: var(--ink-2); margin: 0 0 18px; max-width: 32ch; }
+  .powered { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; }
+  .powered b { background: var(--ink); color: var(--bg); padding: 2px 10px; border-radius: 8px; font-family: Fredoka, sans-serif; }
+  .mascot { display: flex; justify-content: center; }
+  .mascot svg { width: min(300px, 70vw); height: auto; overflow: visible; }
+  .bob { animation: bob 3.2s ease-in-out infinite; transform-origin: center; }
+  @keyframes bob { 50% { transform: translateY(-10px); } }
+  .blink { animation: blink 4.5s infinite; transform-origin: center 112px; transform-box: fill-box; }
+  @keyframes blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(0.1); } }
+
+  /* calculator */
+  .calc {
+    margin: 28px 0; background: var(--card); border: 2.5px solid var(--ink); border-radius: 28px;
+    box-shadow: 6px 6px 0 var(--ink); padding: 26px; display: grid; grid-template-columns: 1fr 1fr; gap: 28px;
+  }
+  label.lbl { display: block; font: 600 15px Fredoka, sans-serif; margin: 0 0 6px; }
+  .field { margin-bottom: 18px; }
+  select, input[type="number"] {
+    width: 100%; font: 600 16px Nunito, sans-serif; color: var(--ink); background: var(--bg);
+    border: 2px solid var(--ink); border-radius: 14px; padding: 10px 12px;
+  }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  input[type="range"] { width: 100%; accent-color: var(--neon-deep); }
+  .hint { font-size: 13px; color: var(--ink-3); margin-top: 4px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { border: 1.5px solid var(--line); background: var(--bg); color: var(--ink-2); border-radius: 999px; padding: 3px 10px; font: 600 13px Nunito, sans-serif; cursor: pointer; }
+  .chip:hover { border-color: var(--ink); color: var(--ink); }
+
+  .result { display: flex; flex-direction: column; align-items: center; text-align: center; }
+  .piggy { width: 210px; height: auto; }
+  .save-label { font: 600 16px Fredoka, sans-serif; color: var(--ink-2); margin-top: 6px; }
+  .save-big { font: 700 clamp(44px, 8vw, 64px)/1 Fredoka, sans-serif; margin: 4px 0 2px; }
+  .save-big .per { font-size: 20px; color: var(--ink-3); }
+  .yr { display: inline-block; background: var(--neon); color: #141413; font: 700 15px Fredoka, sans-serif; padding: 4px 12px; border-radius: 999px; margin: 8px 0 14px; transform: rotate(-1.5deg); }
+  .compare { width: 100%; display: grid; gap: 8px; }
+  .cmp { display: grid; grid-template-columns: 92px 1fr auto; align-items: center; gap: 10px; font-size: 14px; }
+  .cmp .track { height: 22px; border-radius: 999px; background: var(--bg); border: 2px solid var(--ink); overflow: hidden; }
+  .cmp .fill { height: 100%; border-radius: 999px; transition: width .5s cubic-bezier(.3,1.4,.5,1); }
+  .cmp .fill.direct { background: var(--pink); }
+  .cmp .fill.orbio { background: var(--neon); }
+  .cmp .amt { font: 500 14px "JetBrains Mono", monospace; min-width: 84px; text-align: right; }
+  .cmp .who { text-align: left; font-weight: 700; }
+  .fine { font-size: 12px; color: var(--ink-3); margin-top: 12px; max-width: 40ch; }
+
+  .coin { position: fixed; pointer-events: none; font-size: 26px; z-index: 50; animation: drop 900ms ease-in forwards; }
+  @keyframes drop { from { transform: translateY(-40px) rotate(0); opacity: 1; } to { transform: translateY(120px) rotate(200deg); opacity: 0; } }
+
+  /* how it works */
+  .how { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 40px 0; }
+  .step { background: var(--card); border: 2px solid var(--ink); border-radius: 22px; padding: 18px; box-shadow: var(--shadow); }
+  .step .n { width: 34px; height: 34px; border-radius: 50%; background: var(--sky); color: #141413; border: 2px solid var(--ink); display: grid; place-items: center; font: 700 16px Fredoka, sans-serif; margin-bottom: 8px; }
+  .step:nth-child(2) .n { background: var(--pink); }
+  .step:nth-child(3) .n { background: var(--neon); }
+  .step h3 { margin: 0 0 4px; font-size: 20px; }
+  .step p { margin: 0; color: var(--ink-2); font-size: 15px; }
+
+  .code {
+    background: #141413; color: #f6f3e8; border-radius: 20px; padding: 18px 20px; overflow-x: auto;
+    font: 500 14px/1.7 "JetBrains Mono", monospace; border: 2px solid var(--ink); margin: 0 0 40px;
+  }
+  .code .c { color: #8d8b82; }
+  .code .k { color: #d4ff3f; }
+  .code .s { color: #9fd8ff; }
+  h2.sec { font-size: 30px; margin: 0 0 12px; }
+
+  footer { border-top: 2px dashed var(--line); padding: 22px 0 40px; color: var(--ink-3); font-size: 14px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+  @media (max-width: 760px) {
+    .hero { grid-template-columns: 1fr; text-align: center; }
+    .hero p.lede { margin-left: auto; margin-right: auto; }
+    .mascot { order: -1; }
+    .mascot svg { width: 180px; }
+    .calc { grid-template-columns: 1fr; padding: 18px; }
+    .how { grid-template-columns: 1fr; }
+    .cmp { grid-template-columns: 70px 1fr auto; }
+    .cmp .amt { min-width: 70px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .bob, .blink, .coin { animation: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <a class="brand" href="#">
+      <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="17" fill="#d4ff3f" stroke="currentColor" stroke-width="3"/><circle cx="14.5" cy="18" r="2.3" fill="#141413"/><circle cx="25.5" cy="18" r="2.3" fill="#141413"/><path d="M15 25q5 4 10 0" stroke="#141413" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>
+      Orby's Piggy Bank
+    </a>
+    <a class="pill" href="https://www.orbio.so" target="_blank" rel="noopener"><span class="dot"></span>built on Orbio</a>
+  </header>
+
+  <section class="hero">
+    <div>
+      <h1>Your AI bill,<br><span class="hl">but smaller.</span></h1>
+      <p class="lede">Pick a model, tell Orby how much you use it, and watch the piggy bank fill up with what <strong>Orbio's discounted credits</strong> would save you.</p>
+      <span class="powered">prices live from <b>orbio.so</b></span>
+    </div>
+    <div class="mascot" aria-hidden="true">
+      <svg viewBox="0 0 220 220">
+        <ellipse cx="110" cy="205" rx="58" ry="8" fill="currentColor" opacity=".1"/>
+        <g class="bob">
+          <ellipse cx="110" cy="105" rx="98" ry="26" fill="none" stroke="#9fd8ff" stroke-width="7" transform="rotate(-14 110 105)"/>
+          <circle cx="110" cy="105" r="72" fill="#d4ff3f" stroke="#141413" stroke-width="5"/>
+          <ellipse cx="86" cy="72" rx="16" ry="10" fill="#fff" opacity=".55" transform="rotate(-30 86 72)"/>
+          <g class="blink"><circle cx="86" cy="104" r="8" fill="#141413"/><circle cx="134" cy="104" r="8" fill="#141413"/>
+          <circle cx="89" cy="101" r="2.6" fill="#fff"/><circle cx="137" cy="101" r="2.6" fill="#fff"/></g>
+          <circle cx="70" cy="124" r="9" fill="#ff9ec7" opacity=".8"/><circle cx="150" cy="124" r="9" fill="#ff9ec7" opacity=".8"/>
+          <path d="M98 126q12 12 24 0" stroke="#141413" stroke-width="5" fill="none" stroke-linecap="round"/>
+          <path d="M44 120 A98 26 -14 0 0 176 90" fill="none" stroke="#9fd8ff" stroke-width="7" transform="rotate(0)"/>
+        </g>
+      </svg>
+    </div>
+  </section>
+
+  <section class="calc" aria-label="Savings calculator">
+    <div>
+      <div class="field">
+        <label class="lbl" for="model">Which model?</label>
+        <select id="model"></select>
+        <div class="hint" id="modelHint">Loading Orbio's model list…</div>
+        <div class="chips" id="chips"></div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label class="lbl" for="inTok">Input tokens / mo</label>
+          <input id="inTok" type="number" min="0" step="1" value="200">
+          <div class="hint">millions</div>
+        </div>
+        <div class="field">
+          <label class="lbl" for="outTok">Output tokens / mo</label>
+          <input id="outTok" type="number" min="0" step="1" value="40">
+          <div class="hint">millions</div>
+        </div>
+      </div>
+      <div class="field">
+        <label class="lbl" for="disc">Orbio discount: <span id="discVal">22.5%</span></label>
+        <input id="disc" type="range" min="5" max="25" step="0.5" value="22.5">
+        <div class="hint">Orbio's discount moves with credit supply (roughly 5–25%). 22.5% is what orbio.so is showing as an example right now.</div>
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;font-size:15px;cursor:pointer">
+        <input id="fee" type="checkbox" checked> Include Orbio's 5% platform fee
+      </label>
+    </div>
+
+    <div class="result" aria-live="polite">
+      <svg class="piggy" viewBox="0 0 220 170" aria-hidden="true">
+        <defs><clipPath id="pigBody"><ellipse cx="108" cy="92" rx="78" ry="58"/></clipPath></defs>
+        <rect x="68" y="18" width="36" height="9" rx="4.5" fill="#141413"/>
+        <ellipse cx="108" cy="92" rx="78" ry="58" fill="#ffd1e4"/>
+        <g clip-path="url(#pigBody)">
+          <rect id="pigFill" x="20" y="150" width="180" height="120" fill="#d4ff3f"/>
+          <g id="pigCoins" fill="#141413" opacity=".18"></g>
+        </g>
+        <ellipse cx="108" cy="92" rx="78" ry="58" fill="none" stroke="#141413" stroke-width="5"/>
+        <path d="M60 46 L52 18 L82 38" fill="#ffd1e4" stroke="#141413" stroke-width="5" stroke-linejoin="round"/>
+        <ellipse cx="184" cy="96" rx="20" ry="17" fill="#ff9ec7" stroke="#141413" stroke-width="5"/>
+        <circle cx="179" cy="96" r="3.2" fill="#141413"/><circle cx="190" cy="96" r="3.2" fill="#141413"/>
+        <circle cx="150" cy="74" r="6" fill="#141413"/>
+        <rect x="58" y="140" width="18" height="24" rx="6" fill="#ffd1e4" stroke="#141413" stroke-width="5"/>
+        <rect x="132" y="140" width="18" height="24" rx="6" fill="#ffd1e4" stroke="#141413" stroke-width="5"/>
+        <path d="M30 88 q-18 -6 -12 -20" fill="none" stroke="#141413" stroke-width="5" stroke-linecap="round"/>
+      </svg>
+      <div class="save-label">With Orbio you'd save</div>
+      <div class="save-big"><span id="saveMo">$0</span><span class="per"> /mo</span></div>
+      <div class="yr" id="saveYr">that's $0 a year 🎉</div>
+      <div class="compare">
+        <div class="cmp"><span class="who">Direct</span><div class="track"><div class="fill direct" id="barDirect" style="width:100%"></div></div><span class="amt" id="amtDirect">$0</span></div>
+        <div class="cmp"><span class="who">Via Orbio</span><div class="track"><div class="fill orbio" id="barOrbio" style="width:80%"></div></div><span class="amt" id="amtOrbio">$0</span></div>
+      </div>
+      <p class="fine" id="fine">List prices come from Orbio's public model catalogue. This is an estimate; actual discounts depend on the market when you buy credits.</p>
+    </div>
+  </section>
+
+  <h2 class="sec">How Orbio does it</h2>
+  <div class="how">
+    <div class="step"><div class="n">1</div><h3>Buy credits cheap</h3><p>People who earned Orbio credits resell them below list price. You buy from $5, no subscription.</p></div>
+    <div class="step"><div class="n">2</div><h3>Swap two lines</h3><p>Point your OpenAI‑style client at Orbio's base URL and use your Orbio key. One key, hundreds of models.</p></div>
+    <div class="step"><div class="n">3</div><h3>Same models, smaller bill</h3><p>Requests are relayed straight to the model you named. Your piggy bank does the rest.</p></div>
+  </div>
+
+  <pre class="code"><span class="c"># the whole migration, more or less</span>
+<span class="k">from</span> openai <span class="k">import</span> OpenAI
+
+client = OpenAI(
+    base_url=<span class="s">"https://www.orbio.so/api/v1"</span>,  <span class="c"># ← was api.openai.com</span>
+    api_key=<span class="s">"YOUR_ORBIO_KEY"</span>,                <span class="c"># ← your Orbio key</span>
+)
+client.chat.completions.create(model=<span class="s" id="codeModel">"anthropic/claude-sonnet-5.5"</span>, messages=[...])</pre>
+
+  <footer>
+    <span>A fan‑made calculator built on <a href="https://www.orbio.so" target="_blank" rel="noopener">Orbio</a>. Not affiliated with or endorsed by Orbio.</span>
+    <span>Made with 🪙 and a very round mascot.</span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const CATALOGUE = "https://www.orbio.so/api/v1/models";
+  // Used only if the live catalogue can't be reached. USD per token.
+  const FALLBACK = [
+    { id: "anthropic/claude-fable-5.1", name: "Anthropic: Claude Fable 5.1", in: 0.00001, out: 0.00005 },
+    { id: "anthropic/claude-opus-5.5", name: "Anthropic: Claude Opus 5.5", in: 0.000004, out: 0.00002 },
+    { id: "anthropic/claude-sonnet-5.5", name: "Anthropic: Claude Sonnet 5.5", in: 0.000002, out: 0.00001 },
+    { id: "openai/gpt-5.6-sol", name: "OpenAI: GPT-5.6 Sol", in: 0.000002, out: 0.00001 },
+    { id: "openai/gpt-5.6-terra", name: "OpenAI: GPT-5.6 Terra", in: 0.000002, out: 0.000012 },
+    { id: "google/gemini-3.8-flash", name: "Google: Gemini 3.8 Flash", in: 0.00000075, out: 0.00000375 },
+  ];
+  const FAVES = ["anthropic/claude-sonnet-5.5", "anthropic/claude-fable-5.1", "openai/gpt-5.6-sol", "google/gemini-3.8-flash"];
+  const DEFAULT = "anthropic/claude-sonnet-5.5";
+
+  const $ = (id) => document.getElementById(id);
+  const sel = $("model"), inTok = $("inTok"), outTok = $("outTok"), disc = $("disc"), fee = $("fee");
+  let models = [];
+  let lastSave = 0;
+
+  const money = (n) => n >= 1000
+    ? "$" + Math.round(n).toLocaleString("en-US")
+    : "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  function setModels(list, live) {
+    models = list.sort((a, b) => a.name.localeCompare(b.name));
+    sel.innerHTML = models.map(m =>
+      `<option value="${m.id}">${m.name.replace(/</g, "&lt;")}</option>`).join("");
+    sel.value = models.some(m => m.id === DEFAULT) ? DEFAULT : models[0].id;
+    $("modelHint").textContent = live
+      ? `${models.length} chat models, live from Orbio's catalogue.`
+      : "Couldn't reach Orbio just now, so these are saved prices.";
+    $("chips").innerHTML = FAVES.filter(id => models.some(m => m.id === id)).map(id =>
+      `<button class="chip" data-id="${id}">${id.split("/")[1]}</button>`).join("");
+    update();
+  }
+
+  async function load() {
+    try {
+      const res = await fetch(CATALOGUE);
+      if (!res.ok) throw new Error(res.status);
+      const { data } = await res.json();
+      const list = data
+        .filter(m => !m.id.includes(":") && !m.id.startsWith("~")
+          && (m.architecture?.output_modalities || []).includes("text"))
+        .map(m => ({ id: m.id, name: m.name || m.id, in: +m.pricing?.prompt || 0, out: +m.pricing?.completion || 0 }))
+        .filter(m => m.in > 0 || m.out > 0);
+      if (!list.length) throw new Error("empty");
+      setModels(list, true);
+    } catch {
+      setModels(FALLBACK.slice(), false);
+    }
+  }
+
+  function dropCoins(n) {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const r = document.querySelector(".piggy").getBoundingClientRect();
+    for (let i = 0; i < n; i++) {
+      const c = document.createElement("span");
+      c.className = "coin"; c.textContent = "🪙";
+      c.style.left = (r.left + r.width * 0.3 + Math.random() * r.width * 0.15) + "px";
+      c.style.top = (r.top - 10) + "px";
+      c.style.animationDelay = (i * 90) + "ms";
+      document.body.appendChild(c);
+      setTimeout(() => c.remove(), 1200 + i * 90);
+    }
+  }
+
+  function update() {
+    const m = models.find(x => x.id === sel.value);
+    if (!m) return;
+    const d = +disc.value / 100;
+    $("discVal").textContent = (+disc.value).toFixed(1).replace(/\.0$/, "") + "%";
+    const direct = (Math.max(0, +inTok.value) * m.in + Math.max(0, +outTok.value) * m.out) * 1e6;
+    const orbio = direct * (1 - d) * (fee.checked ? 1.05 : 1);
+    const save = Math.max(0, direct - orbio);
+
+    $("saveMo").textContent = money(save);
+    $("saveYr").textContent = save > 0 ? `that's ${money(save * 12)} a year 🎉` : "add some tokens to start saving";
+    $("amtDirect").textContent = money(direct);
+    $("amtOrbio").textContent = money(orbio);
+    $("barOrbio").style.width = direct ? (orbio / direct * 100) + "%" : "0%";
+    $("barDirect").style.width = direct ? "100%" : "0%";
+    $("codeModel").textContent = `"${m.id}"`;
+    $("fine").textContent =
+      `${m.id}: $${(m.in * 1e6).toFixed(2)} in / $${(m.out * 1e6).toFixed(2)} out per million tokens at list price. ` +
+      `Estimate only — Orbio's real discount depends on the credit market when you buy.`;
+
+    // Fill the piggy: the bigger the yearly saving, the fuller (log scale, $10 → $100k).
+    const yr = save * 12;
+    const pct = yr <= 0 ? 0 : Math.min(1, Math.max(0.08, Math.log10(yr / 10) / 4));
+    $("pigFill").setAttribute("y", 150 - pct * 116);
+    $("pigFill").style.transition = "y .6s cubic-bezier(.3,1.4,.5,1)";
+    if (save > lastSave + 0.5) dropCoins(Math.min(5, 1 + Math.floor(Math.log10(save - lastSave + 1))));
+    lastSave = save;
+  }
+
+  [sel, inTok, outTok, disc, fee].forEach(el => el.addEventListener("input", update));
+  $("chips").addEventListener("click", e => {
+    const id = e.target.dataset?.id;
+    if (id) { sel.value = id; update(); }
+  });
+  load();
+})();
+</script>
+</body>
+</html>
