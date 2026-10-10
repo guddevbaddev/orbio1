@@ -1,0 +1,435 @@
+// Painted sprite overrides. Every sprite in the game has a named slot. If a PNG for that
+// slot is listed in assets/sprites/manifest.json, the game draws it; otherwise it falls
+// back to the code-drawn art in art.js. So art can be swapped in one piece at a time.
+//
+// Density: sprite PNGs are drawn at 2 image pixels per game pixel, so one 16px game tile
+// is 32×32 in the PNG. Bigger images are scaled down smoothly. Static sprites are anchored
+// at the bottom-centre of their footprint, so their height can differ from the code art.
+
+import * as Art from "./art.js";
+import * as Blocks from "./blocks.js";
+
+export const SCALE = 2;
+
+// "art" shows painted sprites, falling back to code art. "blocks" shows painted sprites,
+// falling back to template blocks, so you can see the bare layout you're making art for.
+let mode = (() => {
+  try {
+    const q = new URLSearchParams(location.search).get("art");
+    if (q === "blocks" || q === "art") return q;
+    return localStorage.getItem("orbio-art-mode") === "blocks" ? "blocks" : "art";
+  } catch { return "art"; }
+})();
+export const blocksMode = () => mode === "blocks";
+export function toggleMode() {
+  mode = mode === "blocks" ? "art" : "blocks";
+  try { localStorage.setItem("orbio-art-mode", mode); } catch {}
+  return mode;
+}
+const DIR = "assets/sprites/";
+const images = new Map();
+
+export async function loadSprites() {
+  let files = [];
+  try {
+    const res = await fetch(`${DIR}manifest.json`, { cache: "no-cache" });
+    if (res.ok) files = (await res.json()).files || [];
+  } catch {}
+  await Promise.all(files.map((f) => new Promise((ok) => {
+    const img = new Image();
+    img.onload = () => { images.set(f.replace(/\.png$/i, ""), img); ok(); };
+    img.onerror = ok;
+    img.src = DIR + f;
+  })));
+  return images.size;
+}
+export const get = (name) => images.get(name);
+export const has = (name) => images.has(name);
+
+function blit(img, sx, sy, sw, sh, dx, dy, dw, dh, flip) {
+  const g = Art.getContext();
+  const smooth = sw > dw * SCALE + 0.5;
+  const prev = g.imageSmoothingEnabled;
+  g.imageSmoothingEnabled = smooth;
+  if (flip) {
+    g.save(); g.translate(dx + dw, dy); g.scale(-1, 1);
+    g.drawImage(img, sx, sy, sw, sh, 0, 0, dw, dh);
+    g.restore();
+  } else g.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+  g.imageSmoothingEnabled = prev;
+}
+
+// A whole-image sprite whose bottom-centre sits at (ax, ay) in game pixels.
+export function drawStatic(name, ax, ay, lit) {
+  const img = (lit && images.get(`${name}-night`)) || images.get(name);
+  if (!img) {
+    const slot = SLOT[name];
+    if (!slot || !(blocksMode() || !slot.code)) return false;
+    // repeated scenery stays unlabelled so the map stays readable
+    return Blocks.staticBlock(name, slot.cat, ax, ay, slot.w, slot.h, slot.fw, slot.fh, !/^(fence|tree|bush|lantern)/.test(name));
+  }
+  const w = img.width / SCALE, h = img.height / SCALE;
+  blit(img, 0, 0, img.width, img.height, Math.round(ax - w / 2), Math.round(ay - h), w, h);
+  return true;
+}
+
+// A 16×16 ground tile. The PNG is a horizontal strip of square cells: variants for
+// static tiles (picked per tile so the ground doesn't repeat), or animation frames.
+export function drawTile(name, x, y, pick) {
+  const img = images.get(name);
+  if (!img) return blocksMode() && SLOT[name] ? Blocks.tileBlock(name, x, y, pick) : false;
+  const cell = img.height, n = Math.max(1, Math.floor(img.width / cell));
+  const i = ((pick % n) + n) % n;
+  blit(img, i * cell, 0, cell, cell, x, y, 16, 16);
+  return true;
+}
+export const tileFrames = (name) => { const img = images.get(name); return img ? Math.max(1, Math.floor(img.width / img.height)) : 0; };
+
+// A character sheet: columns are frames, rows are directions (down, up, left, right),
+// drawn with its bottom-centre at the bottom-centre of the 16×16 spot (x, y).
+export function drawSheet(name, x, y, row, col, flip) {
+  const slot = SLOT[name], img = images.get(name);
+  if (!slot) return false;
+  if (!img) return blocksMode() ? Blocks.sheetBlock(name, slot.cat, x, y, slot.cellW, slot.cellH, row, col) : false;
+  const { cols, rows } = gridOf(slot, img);
+  const cw = img.width / cols, ch = img.height / rows;
+  const r = Math.min(row, rows - 1), c = Math.min(col, cols - 1);
+  const w = slot.cellW / SCALE, h = slot.cellH / SCALE;
+  blit(img, c * cw, r * ch, cw, ch, Math.round(x + 8 - w / 2), Math.round(y + 16 - h), w, h, flip);
+  return true;
+}
+export const sheetRows = (name) => (SLOT[name] && images.get(name) ? gridOf(SLOT[name], images.get(name)).rows : 0);
+
+// A sheet may be a full grid, a single row of frames, or just one still picture.
+function gridOf(slot, img) {
+  const aspect = slot.cellW / slot.cellH;
+  if (Math.abs(img.width / img.height - aspect) / aspect < 0.2) return { cols: 1, rows: 1 };
+  const cw = img.width / slot.cols;
+  return { cols: slot.cols, rows: Math.max(1, Math.round(img.height / (cw / aspect))) };
+}
+
+// ---------------------------------------------------------------- the slot list
+// kind: static (one image), tile (strip of 32×32 cells), sheet (grid of cells).
+// w/h are game pixels for static sprites; cellW/cellH are PNG pixels for sheets.
+
+const statics = (name, w, h, desc, code, night) => ({ name, kind: "static", w, h, desc, code, night });
+// UI pieces and portraits are static images too; they're drawn in menus and over heads.
+const ui = (name, w, h, desc, code) => ({ name, kind: "static", w, h, desc, code, cat: "ui", since: "agents" });
+// Menu skins (kind "skin"): sizes are PNG pixels; slice is the 9-slice border in PNG pixels.
+const skin = (name, w, h, slice, desc, frameKind) => ({ name, kind: "skin", pw: w, ph: h, slice, desc, cat: "menu", since: "menus", frameKind });
+const portrait = (who, desc, draw) => ({
+  name: `portrait-${who}`, kind: "static", w: 48, h: 48, cat: "portrait", since: "agents", desc: `Dialog portrait: ${desc}`,
+  code: () => { const c = cell(draw); const big = document.createElement("canvas"); big.width = big.height = 48; const g = big.getContext("2d"); g.imageSmoothingEnabled = false; g.drawImage(c, 0, 0, 48, 48); return big; },
+});
+export const SLOTS = [
+  statics("farmhouse", 112, 112, "Your timber farmhouse. Footprint 7×4 tiles; the door is at the bottom centre.", (lit) => Art.farmhouse(lit), true),
+  statics("barn", 80, 96, "Red barn with a big door at the bottom centre. Footprint 5×4 tiles.", (lit) => Art.barn(lit), true),
+  statics("silo", 32, 88, "Tall coin silo with the Orbio orb emblem. Footprint 2×2 tiles.", () => Art.silo()),
+  statics("station", 32, 48, "Scout Station, the robots' charging machine. The floating coin on top is animated by the game, so leave the top ~10px empty.", (lit) => Art.stationBody(lit), true),
+  statics("greenhouse", 96, 88, "Glass greenhouse with a door at the bottom centre. Footprint 6×4 tiles.", (lit) => Art.greenhouse(lit), true),
+  statics("gazette", 96, 104, "The Meme Gazette shop: green roof, big shiba coin sign, door at the bottom centre. Footprint 6×4 tiles.", (lit) => Art.gazette(lit), true),
+  { ...statics("launchpad", 64, 112, "The Launchpad Tower in town: a stone tower with a glowing landing pad and a rocket on top. Footprint 4×4 tiles, door at the bottom centre.", (lit) => Art.launchpadTower(lit), true), since: "launchpad" },
+  statics("fountain", 48, 72, "Town fountain with the stone cat holding a gold coin. Footprint 3×3 tiles.", () => Art.fountain()),
+  statics("stall-red", 32, 40, "Market stall with a red-and-white awning and produce. Footprint 2×1 tiles.", () => Art.stall(Art.C.red)),
+  statics("stall-blue", 32, 40, "Market stall, blue awning.", () => Art.stall(Art.C.overall)),
+  statics("stall-green", 32, 40, "Market stall, green awning.", () => Art.stall(Art.C.roofGreen)),
+  statics("stall-orange", 32, 40, "Market stall, orange awning.", () => Art.stall(Art.C.orange)),
+  statics("lantern", 16, 32, "Iron lamp post. Footprint 1 tile.", (lit) => Art.lantern(lit), true),
+  statics("tree-round", 32, 44, "Leafy round tree. Trunk sits on one tile.", () => Art.treeSprite("round")),
+  statics("tree-apple", 32, 44, "Apple tree with red apples.", () => Art.treeSprite("apple")),
+  statics("tree-cherry", 32, 44, "Pink cherry blossom tree.", () => Art.treeSprite("cherry")),
+  statics("tree-pine", 32, 44, "Pine tree for the forest edge.", () => Art.treeSprite("pine")),
+  statics("bush-pink", 16, 16, "Flowering bush, pink flowers.", () => Art.bushSprite("pink")),
+  statics("bush-white", 16, 16, "Flowering bush, white flowers.", () => Art.bushSprite("white")),
+  statics("bush-red", 16, 16, "Bush with red berries.", () => Art.bushSprite("red")),
+  statics("bush-purple", 16, 16, "Flowering bush, purple flowers.", () => Art.bushSprite("purple")),
+  statics("sunflower", 16, 30, "A pair of tall sunflowers.", () => Art.sunflowerSprite()),
+  statics("crate", 16, 16, "Wooden crate of fruit.", () => Art.crate()),
+  statics("barrel", 16, 18, "Wooden barrel.", () => Art.barrel()),
+  statics("hay", 16, 14, "Hay bale.", () => Art.hay()),
+  statics("board", 16, 24, "Bulletin board on two posts.", () => Art.board()),
+  statics("mailbox", 16, 20, "Blue mailbox on a post, flag down (no mail).", () => Art.mailbox(false)),
+  { ...statics("mailbox-flag", 16, 20, "The same mailbox with its red flag up: a letter from the night shift is waiting.", () => Art.mailbox(true)), since: "night-shift" },
+  statics("fence-h", 16, 16, "Horizontal fence section (one tile, tiles left-right).", () => cell((g) => Art.fenceH(0, 0))),
+  statics("fence-v", 16, 16, "Vertical fence section (one tile, tiles top-bottom).", () => cell((g) => Art.fenceV(0, 0))),
+
+  { name: "grass", kind: "tile", n: 4, desc: "Grass. Any number of 32×32 variants side by side; they're scattered at random. Must tile seamlessly.", code: (x, y, i) => Art.grass(x, y, i * 7, i * 3) },
+  { name: "cobble", kind: "tile", n: 2, desc: "Cobblestone road and town square. Seamless variants.", code: (x, y, i) => Art.cobble(x, y, i, i * 2) },
+  { name: "dirt", kind: "tile", n: 2, desc: "Dirt footpath. Seamless variants.", code: (x, y, i) => Art.dirt(x, y, i * 5, i) },
+  { name: "soil", kind: "tile", n: 1, desc: "Tilled soil patch (dry) where crops grow.", code: (x, y) => Art.soilPlot(x, y, false) },
+  { name: "soil-wet", kind: "tile", n: 1, desc: "Tilled soil patch (watered, darker) while a crop is growing.", code: (x, y) => Art.soilPlot(x, y, true) },
+  { name: "water", kind: "tile", n: 4, desc: "Lake and river water. Cells are animation frames, played left to right. Seamless.", code: (x, y, i) => Art.water(x, y, 0, 0, i * 380) },
+  { name: "waterfall", kind: "tile", n: 4, desc: "Falling water. Animation frames, seamless top-to-bottom.", code: (x, y, i) => Art.waterfall(x, y, i * 90) },
+  { name: "cliff", kind: "tile", n: 1, desc: "Rock cliff beside the waterfall.", code: (x, y) => Art.cliff(x, y) },
+  { name: "bridge", kind: "tile", n: 1, desc: "Wooden bridge planks running left-right, with rails at top and bottom.", code: (x, y) => Art.bridge(x, y, true, true) },
+  { name: "dock", kind: "tile", n: 1, desc: "Wooden dock planks out over the lake.", code: (x, y) => Art.dock(x, y) },
+
+  { name: "farmer", kind: "sheet", cols: 3, rows: 4, cellW: 32, cellH: 40, desc: "The player. Columns: standing, step A, step B. Rows: facing down, up, left, right.", code: (d, f) => Art.person(0, 4, d, f ? f - 1 : 0, f > 0) },
+  { name: "robot", kind: "sheet", cols: 3, rows: 5, cellW: 32, cellH: 40, desc: "Scout robot (white body, dark visor, cyan eyes, leaf sprout). Rows: down, up, left, right, and a 5th row carrying a crate of veg.", code: (d, f, t) => Art.robot(0, 4, d === 4 ? 0 : d, 400 + f * 180, { moving: f > 0, carrying: d === 4 }) },
+  { name: "robot-hat", kind: "sheet", cols: 3, rows: 5, cellW: 32, cellH: 40, desc: "Farmhand robot wearing a straw hat. Same layout as robot.", code: (d, f) => Art.robot(0, 4, d === 4 ? 0 : d, 400 + f * 180, { moving: f > 0, carrying: d === 4, hat: true }) },
+  { name: "robot-night", kind: "sheet", cols: 3, rows: 4, cellW: 32, cellH: 40, since: "night-shift", desc: "Night-shift robot: the scout robot in a blue nightcap. Same layout as robot (no carrying row).", code: (d, f) => Art.robot(0, 4, d, 400 + f * 180, { moving: f > 0, nightcap: true }) },
+  { name: "robot-visitor", kind: "sheet", cols: 3, rows: 4, cellW: 32, cellH: 40, since: "launchpad", desc: "A visiting Orbio launchpad agent: a scout robot in a coloured scarf. The game floats the agent's real logo above its head. Same layout as robot.", code: (d, f) => Art.robot(0, 4, d, 400 + f * 180, { moving: f > 0, scarf: Art.C.purple }) },
+  { name: "robot-launched", kind: "sheet", cols: 3, rows: 4, cellW: 32, cellH: 40, since: "launchpad", desc: "Your own launched agent: the scout robot with a gold rocket badge. Same layout as robot.", code: (d, f) => Art.robot(0, 4, d, 400 + f * 180, { moving: f > 0, badge: true, scarf: Art.C.gold }) },
+  ...[1, 2, 3, 4].map((i) => ({ name: `folk-${i}`, kind: "sheet", cols: 3, rows: 4, cellW: 32, cellH: 40, desc: `Townsperson #${i}. Same layout as farmer.`, folk: i - 1 })),
+  { name: "cow", kind: "sheet", cols: 2, rows: 1, cellW: 48, cellH: 36, desc: "Cow facing right (flipped for left). Two idle/walk frames.", code: (d, f) => Art.cow(2, 2, 3, f * 400) },
+  { name: "chicken", kind: "sheet", cols: 2, rows: 1, cellW: 32, cellH: 32, desc: "Chicken facing right. Frame 2 is pecking.", code: (d, f) => Art.chicken(0, 0, f ? 0 : 400, 0) },
+  { name: "orby", kind: "sheet", cols: 4, rows: 1, cellW: 32, cellH: 32, desc: "Orby, the lime-green orb spirit (Orbio's mascot). Four frames of a gentle bob.", code: (d, f) => Art.orby(0, 0, f * 600) },
+  { name: "crop-chatter", kind: "sheet", cols: 4, rows: 1, cellW: 32, cellH: 32, desc: "Chatter Carrot growth stages: seeds, sprout, leafy, ripe carrot.", code: (d, f) => Art.crop(0, 0, "chatter", f, 1) },
+  { name: "crop-rumor", kind: "sheet", cols: 4, rows: 1, cellW: 32, cellH: 32, desc: "Rumor Radish growth stages: seeds, sprout, leafy, ripe radish.", code: (d, f) => Art.crop(0, 0, "rumor", f, 1) },
+  { name: "crop-deep", kind: "sheet", cols: 4, rows: 1, cellW: 32, cellH: 32, since: "agents", desc: "Deep Root Daikon growth stages: seeds, sprout, leafy, ripe long white daikon.", code: (d, f) => Art.crop(0, 0, "deep", f, 1) },
+  { name: "station-coin", kind: "sheet", cols: 4, rows: 1, cellW: 32, cellH: 32, cat: "ui", since: "agents", desc: "The orb-coin floating and spinning above the Scout Station. Four frames: face-on, turning, edge-on, turning back.", code: (d, f) => { const g = Art.getContext(); g.save(); g.translate(-8, 3); Art.stationCoin(f * 314); g.restore(); } },
+
+  // Thought bubbles: what a working robot is doing right now (drawn above its head).
+  ...[["x", "reading X"], ["web", "searching the web"], ["page", "reading a web page"], ["chain", "checking the blockchain"], ["think", "thinking (between steps)"], ["done", "finished, ready to harvest"], ["mail", "delivering a night-shift letter"]].map(([k, what]) =>
+    ({ ...ui(`bubble-${k}`, 16, 16, `Robot thought bubble: ${what}. The tail points down at the robot's head.`, () => cell(() => Art.bubble(0, 0, k, 0))), ...(k === "mail" ? { since: "night-shift" } : {}) })),
+  // Seed packets in the planting menu.
+  ...[["chatter", "Chatter Carrot (orange)"], ["rumor", "Rumor Radish (pink-red)"], ["deep", "Deep Root Daikon (white)"]].map(([k, what]) =>
+    ui(`seed-${k}`, 16, 16, `Seed packet for ${what}, shown in the planting menu.`, () => cell(() => Art.seedPacket(0, 0, k)))),
+  // Fish you catch in the lake, by rarity.
+  ...[["common", "#9a9488"], ["uncommon", "#4fa8e0"], ["rare", "#9a6ae0"], ["legendary", "#ffd34d"]].map(([k, col]) =>
+    ui(`fish-${k}`, 16, 16, `A ${k} fish (each one is a trending meme coin). Shown when you catch it.`, () => cell(() => Art.fishSprite(0, 0, col)))),
+  ui("bobber", 16, 16, "Fishing bobber floating on the water.", () => cell(() => Art.bobber(0, 0, 0, false))),
+  ui("exclaim", 16, 16, "The ! that pops up when a fish bites (and over Orby before you meet).", () => cell(() => Art.exclaim(0, 11))),
+  ui("icon-mailbox", 16, 16, "Dialog icon for the mailbox (Sign in with Orbio).", () => cell(() => Art.getContext().drawImage(Art.mailbox(true), 0, -3))),
+  ui("icon-board", 16, 16, "Dialog icon for the bulletin board (journal).", () => cell(() => Art.getContext().drawImage(Art.board(), 0, -6))),
+  { ...ui("icon-rocket", 16, 16, "A little rocket: the icon for the Launchpad Tower and its dialogs.", () => cell(() => Art.rocket(0, 0))), since: "launchpad" },
+  { ...ui("icon-letter", 16, 16, "An envelope with a red seal: a night-shift letter in the mail list.", () => cell(() => Art.letter(0, 0))), since: "night-shift" },
+  ui("icon-coin", 16, 16, "Dialog icon for coins: the Credit Silo, the Meme Gazette, the Coin Cat fountain.", () => cell(() => { const g = Art.getContext(); g.fillStyle = Art.C.gold2; g.beginPath(); g.arc(8, 8, 7, 0, 7); g.fill(); g.fillStyle = Art.C.gold; g.beginPath(); g.arc(8, 8, 5, 0, 7); g.fill(); })),
+
+  // Menu icons: tabs, buttons, toasts and the robot's step list. Emoji until painted.
+  ...[["harvests", "🥕", "Harvests tab on the bulletin board: a carrot."], ["fish", "🐟", "Fish tab: a little fish."], ["letters", "📬", "Letters tab: an envelope."],
+    ["agents", "🤖", "Agents tab at the Launchpad Tower: a robot head."], ["graduate", "🎓", "Graduate-a-robot tab: a graduation cap."],
+    ["watch", "👁", "Watch overnight button: an eye."], ["plant", "🌱", "Plant button: a sprout in soil."], ["piggy", "🐷", "Piggy bank button at the Credit Silo: a piggy bank."],
+    ["kit", "📦", "Launch kit downloaded: a wooden crate with a gold label."], ["flag", "⚑", "Red flag marker in reports."], ["sun", "☀", "Good morning toast: a sun."],
+    ["sparkle", "✨", "Signed in toast: a sparkle."], ["wilted", "🥀", "Wilted crop toast: a drooping flower."],
+    ["x", "𝕏", "Robot step: reading X."], ["web", "🌐", "Robot step: searching the web (a globe)."], ["page", "📄", "Robot step: reading a page."], ["chain", "⛓️", "Robot step: checking the blockchain (chain links)."]].map(([k, emoji, what]) =>
+    ({ ...ui(`icon-${k}`, 16, 16, `Menu icon. ${what} Until painted, the menus show ${emoji}.`, () => cell(() => Art.menuIcon(k, 0, 0))), cat: "menu", since: "menus", emoji })),
+  { ...ui("cursor", 16, 16, "The highlight frame on the tile you're facing (what Space would use). Transparent middle.", () => cell(() => { const g = Art.getContext(); g.strokeStyle = "#fff"; g.strokeRect(0.5, 0.5, 15, 15); })), cat: "menu", since: "menus" },
+
+  // Menu skins: frames, buttons and panels. They restyle the HTML menus (9-slice where
+  // a slice is given: corners stay put, edges and middle stretch). Sizes are PNG pixels.
+  skin("skin-panel", 96, 96, 24, "Dialog box frame: the big wooden panel every conversation and menu opens in. Plain parchment middle.", "panel"),
+  skin("skin-card", 48, 48, 12, "Report card inside dialogs (harvests, fish, letters, agents): a clean paper card with a thin border.", "card"),
+  skin("skin-button", 48, 48, 12, "Normal button (Cancel, Close, tabs).", "button"),
+  skin("skin-button-primary", 48, 48, 12, "Main button (OK, Plant, Sleep) and the selected tab: lime green, Orbio's colour.", "button-primary"),
+  skin("skin-hud", 48, 48, 12, "Small HUD panels: the clock, the Orbio balance and pop-up toasts.", "hud"),
+  skin("skin-input", 48, 48, 12, "Text box and dropdown (ticker entry, search, launch kit form).", "input"),
+  skin("skin-seed", 48, 48, 12, "Seed choice card in the planting menu.", "seed"),
+  skin("skin-dpad", 64, 64, 16, "Phone touch controls: one arrow button of the d-pad (the arrow is drawn on top).", "dpad"),
+  skin("skin-meter", 64, 16, null, "Fill of the hype meter bar (stretched to length): a green-to-orange glowing bar.", null),
+  skin("skin-abutton", 128, 128, null, "Phone touch controls: the round A (use) button, with the letter A.", null),
+  skin("title-logo", 800, 360, null, "Title screen wordmark: \"Orbio Valley\" in chunky lime-green pixel letters, replaces the title text.", null),
+
+  // Character portraits for dialog boxes (shown 40px tall in the UI).
+  portrait("orby", "Orby, the lime-green orb spirit and your guide.", () => Art.orby(0, 0, 0)),
+  portrait("farmer", "The player: straw hat, orange hair, blue overalls.", () => Art.person(0, 1, 0, 0, false)),
+  portrait("robot", "A scout robot: white body, dark visor, cyan eyes, leaf sprout.", () => Art.robot(0, 2, 0, 1000, { busy: true })),
+  portrait("shopkeeper", "Market stall keeper and Meme Gazette clerk.", () => Art.person(0, 1, 0, 0, false, { hair: "#f0d070", hat: Art.C.straw, shirt: "#5aa05a", pants: "#3f6fc0" })),
+  ...[["#3b2416", null, "#e0483a", "#55331b", "Mabel"], ["#f0d070", Art.C.straw, "#5aa05a", "#3f6fc0", "Gus"], ["#7a3a1a", "#3f6fc0", "#f2f0e6", "#6d4426", "Juniper"], ["#cfcfcf", null, "#9b6ad8", "#2e3245", "Old Pete"]].map(([hair, hat, shirt, pants, who], i) =>
+    portrait(`folk-${i + 1}`, `${who}, a townsperson (matches folk-${i + 1}).`, () => Art.person(0, 1, 0, 0, false, { hair, hat, shirt, pants }))),
+];
+// Footprint (tiles the thing stands on) and category for each slot.
+const FOOT = { launchpad: [4, 4], farmhouse: [7, 4], barn: [5, 4], silo: [2, 2], station: [2, 2], greenhouse: [6, 4], gazette: [6, 4], fountain: [3, 3] };
+for (const s of SLOTS) {
+  if (s.kind === "static") {
+    [s.fw, s.fh] = FOOT[s.name] || (s.name.startsWith("stall") ? [2, 1] : [1, 1]);
+    s.cat ||= s.fw > 1 || s.name.startsWith("stall") ? "building" : /^(tree|bush|sunflower)/.test(s.name) ? "nature" : "prop";
+  } else if (s.kind === "sheet") s.cat ||= s.name.startsWith("crop") ? "crop" : "character";
+  else if (s.kind === "tile") s.cat = "tile";
+  s.since ||= "v1";
+}
+const SLOT = Object.fromEntries(SLOTS.map((s) => [s.name, s]));
+
+// Menu skins restyle the HTML menus when their PNGs exist. One CSS rule per skin.
+const SKIN_CSS = {
+  "skin-panel": [".panel", 12],
+  "skin-card": [".card", 6],
+  "skin-button": [".btn", 6],
+  "skin-button-primary": [".btn.primary, .btn[aria-pressed=true]", 6],
+  "skin-hud": [".clock, .purse, #toast", 6],
+  "skin-input": ["#dialog input[type=text], #dialog select, .lp-controls input", 6],
+  "skin-seed": [".seed", 6],
+  "skin-dpad": [".dpad button", 8],
+};
+export function applySkins() {
+  const rules = [];
+  for (const [name, [sel, width]] of Object.entries(SKIN_CSS)) {
+    const img = images.get(name);
+    if (!img) continue;
+    const k = SLOT[name].slice;
+    rules.push(`${sel.split(",").map((x) => `body ${x.trim()}`).join(", ")} { border-style: solid; border-color: transparent; border-width: ${width}px; border-image: url("${img.src}") ${k} fill / ${width}px stretch; background: none; box-shadow: none; image-rendering: pixelated; }`);
+  }
+  if (images.get("skin-meter")) rules.push(`body .meter i { background: url("${images.get("skin-meter").src}") 0 0 / 100% 100%; image-rendering: pixelated; }`);
+  if (images.get("skin-abutton")) rules.push(`body .abtn { background: url("${images.get("skin-abutton").src}") center / contain no-repeat; border: 0; color: transparent; }`);
+  if (images.get("title-logo")) rules.push(`body #title h1 { color: transparent; text-shadow: none; background: url("${images.get("title-logo").src}") center / contain no-repeat; min-height: clamp(140px, 30vw, 260px); }`);
+  let el = document.getElementById("skin-css");
+  if (!el) { el = document.createElement("style"); el.id = "skin-css"; document.head.append(el); }
+  el.textContent = rules.join("\n");
+}
+
+// An inline menu icon: the painted PNG if there is one, else the emoji.
+export function iconHtml(name, emoji = "") {
+  const img = images.get(name);
+  return img ? `<img class="mi" src="${img.src}" alt="">` : emoji;
+}
+
+// A canvas for menus and dialogs: the painted PNG, else a block (blocks view), else code art.
+export function uiImage(name, size = 16) {
+  const slot = SLOT[name], img = images.get(name);
+  const c = document.createElement("canvas");
+  if (img) { c.width = img.width; c.height = img.height; c.getContext("2d").drawImage(img, 0, 0); return c; }
+  if (slot && (blocksMode() || !slot.code)) {
+    c.width = c.height = size;
+    const prev = Art.getContext(); Art.useContext(c.getContext("2d"));
+    Blocks.staticBlock(name.replace(/^(portrait|icon|bubble|seed|fish)-/, ""), slot.cat, size / 2, size, size, size, 1, 1);
+    Art.useContext(prev);
+    return c;
+  }
+  return slot?.code ? slot.code() : c;
+}
+
+// ---------------------------------------------------------------- the world file
+// assets/world.json adds new props and buildings without touching code:
+// { "decor": [ { "name": "well", "x": 26, "y": 17, "w": 1, "h": 1, "size": [32, 48],
+//                "solid": true, "light": 0, "title": "Old well", "say": "…" } ] }
+// x/y/w/h are the footprint in tiles; size is the PNG size (2× game pixels).
+export async function loadWorld() {
+  let world = { decor: [] };
+  try {
+    const res = await fetch("assets/world.json", { cache: "no-cache" });
+    if (res.ok) world = { decor: [], ...(await res.json()) };
+  } catch {}
+  for (const d of world.decor) {
+    if (!d.name || SLOT[d.name]) continue;
+    const [pw, ph] = d.size || [(d.w || 1) * 32, (d.h || 1) * 32];
+    const slot = { name: d.name, kind: "static", w: pw / SCALE, h: ph / SCALE, fw: d.w || 1, fh: d.h || 1, cat: d.category || "prop",
+      desc: `${d.title || d.name} (from assets/world.json). Footprint ${d.w || 1}×${d.h || 1} tiles at (${d.x}, ${d.y}).`, custom: true, prompt: d.prompt, since: "world.json" };
+    SLOTS.push(slot);
+    SLOT[d.name] = slot;
+  }
+  return world;
+}
+
+// ---------------------------------------------------------------- templates
+// Renders a slot's current code art at the target PNG size, for painting over.
+
+function cell(draw, w = 16, h = 16) {
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const prev = Art.getContext();
+  Art.useContext(c.getContext("2d"));
+  draw();
+  Art.useContext(prev);
+  return c;
+}
+function upscale(src) {
+  const c = document.createElement("canvas");
+  c.width = src.width * SCALE; c.height = src.height * SCALE;
+  const g = c.getContext("2d");
+  g.imageSmoothingEnabled = false;
+  g.drawImage(src, 0, 0, c.width, c.height);
+  return c;
+}
+
+function skinReference(slot) {
+  const c = document.createElement("canvas");
+  c.width = slot.pw; c.height = slot.ph;
+  const g = c.getContext("2d");
+  const prev = Art.getContext(); Art.useContext(g);
+  if (slot.frameKind) Art.frame(slot.pw, slot.ph, slot.frameKind);
+  else if (slot.name === "skin-meter") { const gr = g.createLinearGradient(0, 0, slot.pw, 0); gr.addColorStop(0, Art.C.neon); gr.addColorStop(1, "#ff8a5a"); g.fillStyle = gr; g.fillRect(0, 0, slot.pw, slot.ph); }
+  else if (slot.name === "skin-abutton") { g.fillStyle = Art.C.woodDark; g.beginPath(); g.arc(64, 64, 62, 0, 7); g.fill(); g.fillStyle = Art.C.neon; g.beginPath(); g.arc(64, 64, 56, 0, 7); g.fill(); g.fillStyle = Art.C.ink; g.font = "bold 64px monospace"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("A", 64, 68); }
+  else if (slot.name === "title-logo") { g.font = "bold 150px sans-serif"; g.textAlign = "center"; g.fillStyle = "#55331b"; g.fillText("Orbio", 404, 160); g.fillText("Valley", 404, 320); g.fillStyle = Art.C.neon; g.fillText("Orbio", 400, 150); g.fillText("Valley", 400, 310); }
+  Art.useContext(prev);
+  return c;
+}
+
+export function template(slot, lit = false) {
+  if (slot.kind === "skin") return skinReference(slot);
+  if (slot.kind === "static") return upscale(slot.code(lit));
+  if (slot.kind === "tile") return upscale(cell(() => { for (let i = 0; i < slot.n; i++) slot.code(i * 16, 0, i); }, slot.n * 16, 16));
+  const cw = slot.cellW / SCALE, ch = slot.cellH / SCALE;
+  const LOOKS = [
+    { hair: "#3b2416", hat: null, shirt: "#e0483a", pants: "#55331b" },
+    { hair: "#f0d070", hat: Art.C.straw, shirt: "#5aa05a", pants: "#3f6fc0" },
+    { hair: "#7a3a1a", hat: "#3f6fc0", shirt: "#f2f0e6", pants: "#6d4426" },
+    { hair: "#cfcfcf", hat: null, shirt: "#9b6ad8", pants: "#2e3245" },
+  ];
+  return upscale(cell(() => {
+    const g = Art.getContext();
+    for (let row = 0; row < slot.rows; row++) for (let col = 0; col < slot.cols; col++) {
+      g.save();
+      g.translate(col * cw + (slot.cellH === 40 ? (cw - 16) / 2 : 0), row * ch);
+      if (slot.folk != null) Art.person(0, 4, row, col ? col - 1 : 0, col > 0, LOOKS[slot.folk]);
+      else slot.code(row, col);
+      g.restore();
+    }
+  }, cw * slot.cols, ch * slot.rows));
+}
+
+// Block guide: the template block at the PNG size, with the tile grid, footprint and
+// anchor marked, and each sheet cell labelled with its direction and frame.
+function skinGuide(slot) {
+  const c = document.createElement("canvas");
+  c.width = slot.pw; c.height = slot.ph;
+  const g = c.getContext("2d");
+  g.fillStyle = "rgba(201,138,216,.35)"; g.fillRect(0, 0, c.width, c.height);
+  g.strokeStyle = "#24160f"; g.strokeRect(0.5, 0.5, c.width - 1, c.height - 1);
+  if (slot.slice) {
+    const k = slot.slice;
+    g.fillStyle = "rgba(201,138,216,.6)";
+    for (const [x, y] of [[0, 0], [c.width - k, 0], [0, c.height - k], [c.width - k, c.height - k]]) g.fillRect(x, y, k, k);
+    g.setLineDash([3, 3]); g.strokeStyle = "#7a3d8a";
+    for (const x of [k, c.width - k]) { g.beginPath(); g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, c.height); g.stroke(); }
+    for (const y of [k, c.height - k]) { g.beginPath(); g.moveTo(0, y + 0.5); g.lineTo(c.width, y + 0.5); g.stroke(); }
+  }
+  const prev = Art.getContext(); Art.useContext(g);
+  const label = slot.name.replace(/^skin-/, "").toUpperCase().slice(0, Math.floor((c.width - 4) / 4));
+  Art.tinyText(label, Math.max(2, Math.round(c.width / 2 - label.length * 2)), Math.round(c.height / 2 - 2), "#24160f");
+  Art.useContext(prev);
+  return c;
+}
+
+export function blockTemplate(slot) {
+  if (slot.kind === "skin") return skinGuide(slot);
+  const prevMode = mode;
+  mode = "blocks";
+  let c;
+  if (slot.kind === "static") {
+    c = cell(() => Blocks.staticBlock(slot.name, slot.cat, slot.w / 2, slot.h, slot.w, slot.h, slot.fw, slot.fh), slot.w, slot.h);
+  } else if (slot.kind === "tile") {
+    c = cell(() => { for (let i = 0; i < slot.n; i++) { Blocks.tileBlock(slot.name, i * 16, 0, i); Art.tinyText(String(i + 1), i * 16 + 2, 2, "#24160f"); } }, slot.n * 16, 16);
+  } else {
+    const cw = slot.cellW / SCALE, ch = slot.cellH / SCALE;
+    c = cell(() => {
+      const g = Art.getContext();
+      for (let row = 0; row < slot.rows; row++) for (let col = 0; col < slot.cols; col++) {
+        const x0 = col * cw, y0 = row * ch;
+        Blocks.sheetBlock(slot.name, slot.cat, x0 + cw / 2 - 8, y0 + ch - 16, slot.cellW, slot.cellH, slot.rows > 1 ? row : 3, col, false);
+        g.fillStyle = "rgba(36,22,15,.35)"; g.fillRect(x0, y0 + ch - 1, cw, 1); g.fillRect(x0 + cw - 1, y0, 1, ch);
+        if (slot.rows > 1 && col === 0) {
+          const t = ["DN", "UP", "LT", "RT", "CRY"][row];
+          g.fillStyle = "#fff"; g.fillRect(x0, y0, t.length * 4 + 1, 7);
+          Art.tinyText(t, x0 + 1, y0 + 1, "#24160f");
+        }
+      }
+    }, cw * slot.cols, ch * slot.rows);
+  }
+  mode = prevMode;
+  const big = upscale(c);
+  // tile grid lines every 32 PNG pixels (one game tile)
+  const g = big.getContext("2d");
+  g.fillStyle = "rgba(36,22,15,.18)";
+  if (slot.kind !== "sheet") {
+    for (let x = 32; x < big.width; x += 32) g.fillRect(x, 0, 1, big.height);
+    for (let y = big.height - 32; y > 0; y -= 32) g.fillRect(0, y, big.width, 1);
+  }
+  return big;
+}
+
+export function sizeLabel(slot) {
+  if (slot.kind === "skin") return `${slot.pw}×${slot.ph}${slot.slice ? ` (9-slice, ${slot.slice}px corners)` : ""}`;
+  if (slot.kind === "static") return `${slot.w * SCALE}×${slot.h * SCALE}`;
+  if (slot.kind === "tile") return `32×32 per cell (template has ${slot.n})`;
+  return `${slot.cellW}×${slot.cellH} per cell, ${slot.cols} cols × ${slot.rows} rows = ${slot.cellW * slot.cols}×${slot.cellH * slot.rows}`;
+}

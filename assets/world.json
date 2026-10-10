@@ -1,0 +1,35 @@
+{
+  "decor": [
+    {
+      "name": "well",
+      "title": "Old stone well",
+      "x": 26,
+      "y": 17,
+      "w": 1,
+      "h": 1,
+      "size": [
+        32,
+        48
+      ],
+      "category": "prop",
+      "say": "An old stone well. Locals say if you shout a ticker into it, it echoes back louder.",
+      "prompt": "an old round stone well with a little wooden roof, a rope and a wooden bucket"
+    },
+    {
+      "name": "windmill",
+      "title": "Windmill",
+      "x": 8,
+      "y": 25,
+      "w": 2,
+      "h": 2,
+      "size": [
+        64,
+        160
+      ],
+      "category": "building",
+      "light": 30,
+      "say": "The windmill grinds grain by day and powers the Scout Station's chargers by night.",
+      "prompt": "a tall wooden windmill with a stone base, a small door at the bottom centre and four big cloth sails"
+    }
+  ]
+}
