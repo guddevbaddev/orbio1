@@ -1,0 +1,30 @@
+# Refreshes assets/launchpad.json (the Orbio launchpad directory the game shows) once a
+# day. Orbio's launchpad API doesn't allow browser reads from other sites, so the game
+# reads this snapshot. Run it by hand from the Actions tab too.
+name: Launchpad snapshot
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tools/fetch-launchpad.mjs
+      - name: Commit if it changed
+        run: |
+          if git diff --quiet assets/launchpad.json; then echo "No change"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/launchpad.json
+          git commit -m "Refresh Orbio launchpad snapshot"
+          git push
